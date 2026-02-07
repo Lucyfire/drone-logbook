@@ -4,7 +4,24 @@
 
 <h1 align="center">DJI Flight Log Viewer</h1>
 
-A high-performance desktop application for analyzing DJI drone flight logs. Built with Tauri v2, DuckDB, and React.
+<p align="center">A high-performance desktop application for analyzing DJI drone flight logs. Built with Tauri v2, DuckDB, and React.</p>
+
+
+<p align="center">
+    <img src="screenshots/overview_panel.png" alt="Overview dashboard" width="900" />
+</p>
+<p align="center">
+    <img src="screenshots/Flights_panel_1.png" alt="Flights panel" width="900" />
+</p>
+<p align="center">
+    <img src="screenshots/Settings_panel.png" alt="Settings panel" width="900" />
+</p>
+<p align="center">
+    <img src="screenshots/overview_panel_light.png" alt="Overview dashboard (light)" width="900" />
+</p>
+<p align="center">
+    <img src="screenshots/Flights_panel_light_1.png" alt="Flights panel (light)" width="900" />
+</p>
 
 ## Features
 

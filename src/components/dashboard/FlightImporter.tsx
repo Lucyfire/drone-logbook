@@ -154,7 +154,7 @@ export function FlightImporter() {
 
           <button
             onClick={handleBrowse}
-            className="btn-primary text-sm py-1.5 px-3"
+            className="btn-primary text-sm py-1.5 px-3 force-white"
             disabled={isImporting || isBatchProcessing}
           >
             Browse Files

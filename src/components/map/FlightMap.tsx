@@ -315,7 +315,7 @@ function ToggleRow({
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="w-full flex items-center justify-between gap-3 text-xs text-gray-200 hover:text-white transition-colors"
+      className="w-full flex items-center justify-between gap-3 text-xs text-gray-300 hover:text-white transition-colors"
       aria-pressed={checked}
     >
       <span>{label}</span>

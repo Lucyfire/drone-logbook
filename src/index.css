@@ -126,6 +126,10 @@ body.modal-open .overflow-y-auto {
   .stat-label {
     @apply text-sm text-gray-400;
   }
+
+  .force-white {
+    color: #ffffff !important;
+  }
 }
 
 select.input {

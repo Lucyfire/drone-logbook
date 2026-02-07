@@ -16,6 +16,19 @@ import {
   formatDateTime,
   type UnitSystem,
 } from '@/lib/utils';
+import { useFlightStore } from '@/stores/flightStore';
+
+function resolveThemeMode(mode: 'system' | 'dark' | 'light'): 'dark' | 'light' {
+  if (mode === 'system') {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    }
+    return 'dark';
+  }
+  return mode;
+}
 
 interface OverviewProps {
   stats: OverviewStats;
@@ -25,6 +38,8 @@ interface OverviewProps {
 }
 
 export function Overview({ stats, flights, unitSystem, onSelectFlight }: OverviewProps) {
+  const themeMode = useFlightStore((state) => state.themeMode);
+  const resolvedTheme = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
   // Filter state
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [isDateOpen, setIsDateOpen] = useState(false);
@@ -429,7 +444,10 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
           <h3 className="text-sm font-semibold text-white mb-3 text-center">
             Flight Activity (Last 365 Days)
           </h3>
-        <ActivityHeatmap flightsByDate={filteredStats.flightsByDate} />
+        <ActivityHeatmap
+          flightsByDate={filteredStats.flightsByDate}
+          isLight={resolvedTheme === 'light'}
+        />
       </div>
 
       {/* Charts Row */}
@@ -467,6 +485,7 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
           <BatteryHealthList
             batteries={filteredStats.batteriesUsed}
             points={filteredHealthPoints}
+            isLight={resolvedTheme === 'light'}
           />
         </div>
 
@@ -572,7 +591,13 @@ function StatCard({
   );
 }
 
-function ActivityHeatmap({ flightsByDate }: { flightsByDate: { date: string; count: number }[] }) {
+function ActivityHeatmap({
+  flightsByDate,
+  isLight,
+}: {
+  flightsByDate: { date: string; count: number }[];
+  isLight: boolean;
+}) {
   const maxWidth = 1170;
   const labelWidth = 28;
   const gapSize = 2;
@@ -643,9 +668,14 @@ function ActivityHeatmap({ flightsByDate }: { flightsByDate: { date: string; cou
 
   const getColor = (count: number) => {
     if (count < 0) return 'transparent';
-    if (count === 0) return 'rgb(30, 35, 50)';
+    if (count === 0) return isLight ? '#e2e8f0' : 'rgb(30, 35, 50)';
     const intensity = Math.min(count / Math.max(maxCount, 1), 1);
-    // Gradient from dark teal to bright cyan
+    if (isLight) {
+      const r = Math.round(94 + intensity * 0);
+      const g = Math.round(134 + intensity * 102);
+      const b = Math.round(183 + intensity * 72);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
     const r = Math.round(0 + intensity * 0);
     const g = Math.round(50 + intensity * 162);
     const b = Math.round(80 + intensity * 140);
@@ -736,10 +766,7 @@ function ActivityHeatmap({ flightsByDate }: { flightsByDate: { date: string; cou
                   key={i}
                   className="w-[10px] h-[10px] rounded-[2px]"
                   style={{
-                    backgroundColor:
-                      i === 0
-                        ? 'rgb(30, 35, 50)'
-                        : `rgb(${Math.round(0 + intensity * 0)}, ${Math.round(50 + intensity * 162)}, ${Math.round(80 + intensity * 140)})`,
+                    backgroundColor: getColor(i === 0 ? 0 : intensity * Math.max(maxCount, 1)),
                   }}
                 />
               ))}
@@ -800,8 +827,8 @@ function DonutChart({
         avoidLabelOverlap: true,
         itemStyle: {
           borderRadius: 4,
-          borderColor: 'rgb(22, 33, 62)',
-          borderWidth: 2,
+          borderColor: 'transparent',
+          borderWidth: 0,
         },
         label: { show: false },
         emphasis: {
@@ -833,9 +860,11 @@ function DonutChart({
 function BatteryHealthList({
   batteries,
   points,
+  isLight,
 }: {
   batteries: { batterySerial: string; flightCount: number; totalDurationSecs: number }[];
   points: BatteryHealthPoint[];
+  isLight: boolean;
 }) {
   if (batteries.length === 0) {
     return <p className="text-sm text-gray-400">No battery data available.</p>;
@@ -890,17 +919,25 @@ function BatteryHealthList({
   const yMin = allY.length ? Math.min(...allY) : 0;
   const yMax = allY.length ? Math.max(...allY) : 1;
 
+  const titleColor = isLight ? '#0f172a' : '#e5e7eb';
+  const axisLineColor = isLight ? '#cbd5f5' : '#374151';
+  const splitLineColor = isLight ? '#e2e8f0' : '#1f2937';
+  const axisLabelColor = isLight ? '#475569' : '#9ca3af';
+  const tooltipStyle = isLight
+    ? { background: '#ffffff', border: '#e2e8f0', text: '#0f172a' }
+    : { background: 'rgba(22, 33, 62, 0.95)', border: '#374151', text: '#e5e7eb' };
+
   const chartOption = {
     title: {
       text: 'Per minute battery % usage history',
       left: 'center',
-      textStyle: { color: '#e5e7eb', fontSize: 12, fontWeight: 'normal' as const },
+      textStyle: { color: titleColor, fontSize: 12, fontWeight: 'normal' as const },
     },
     tooltip: {
       trigger: 'axis' as const,
-      backgroundColor: 'rgba(22, 33, 62, 0.95)',
-      borderColor: '#374151',
-      textStyle: { color: '#e5e7eb' },
+      backgroundColor: tooltipStyle.background,
+      borderColor: tooltipStyle.border,
+      textStyle: { color: tooltipStyle.text },
       formatter: (params: Array<{ seriesName: string; value: [string, number] }>) => {
         if (!params?.length) return '';
         const dateLabel = params[0].value?.[0]
@@ -915,24 +952,24 @@ function BatteryHealthList({
     legend: {
       type: 'scroll' as const,
       bottom: 0,
-      textStyle: { color: '#9ca3af', fontSize: 11 },
+      textStyle: { color: axisLabelColor, fontSize: 11 },
     },
     grid: { left: 16, right: 16, top: 46, bottom: 48, containLabel: true },
     xAxis: {
       type: 'time' as const,
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#1f2937' } },
+      axisLine: { lineStyle: { color: axisLineColor } },
+      axisLabel: { color: axisLabelColor, fontSize: 10 },
+      splitLine: { lineStyle: { color: splitLineColor } },
     },
     yAxis: {
       type: 'value' as const,
       min: yMin,
       max: yMax,
       name: '% per min',
-      nameTextStyle: { color: '#9ca3af', fontSize: 10 },
-      axisLine: { lineStyle: { color: '#374151' } },
-      axisLabel: { color: '#9ca3af', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#1f2937' } },
+      nameTextStyle: { color: axisLabelColor, fontSize: 10 },
+      axisLine: { lineStyle: { color: axisLineColor } },
+      axisLabel: { color: axisLabelColor, fontSize: 10 },
+      splitLine: { lineStyle: { color: splitLineColor } },
     },
     series,
   };
