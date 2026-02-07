@@ -38,3 +38,5 @@ jobs:
           projectPath: '.'
           args: '--verbose'
           releaseId: ${{ github.event.release.id }}
+          upload: true
+          artifactPath: ${{ matrix.os == 'windows-latest' && 'src-tauri/target/release/bundle' || 'src-tauri/target/release/bundle' }}
