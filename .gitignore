@@ -46,7 +46,6 @@ coverage/
 # Tauri
 src-tauri/target/
 src-tauri/WixTools/
-src-tauri/icons/
 
 # Generated types
 src-tauri/bindings/
