@@ -7,7 +7,7 @@
       "frontend": "React 18 + TypeScript + Vite + Tailwind",
       "state": "Zustand",
       "charts": "ECharts (echarts-for-react)",
-      "maps": "MapLibre GL (react-map-gl)",
+      "maps": "MapLibre GL (react-map-gl) + deck.gl",
       "database": "DuckDB (duckdb-rs, bundled)",
       "parser": "dji-log-parser v0.5.7"
     },
@@ -29,6 +29,8 @@
       "echarts_for_react": "^3.0.2",
       "react_map_gl": "^7.1.7",
       "maplibre_gl": "^4.7.0",
+      "deck_gl": "^9.x",
+      "deck_gl_layers": "^9.x",
       "react_dropzone": "^14.3.5",
       "react_day_picker": "^9.13.0"
     },
@@ -36,6 +38,7 @@
       "@tauri-apps/api",
       "@tauri-apps/plugin-dialog",
       "@tauri-apps/plugin-fs",
+      "@tauri-apps/plugin-log",
       "@tauri-apps/plugin-shell"
     ],
     "backend": {
@@ -48,11 +51,17 @@
       "Import and parse DJI flight logs (bulk import with cooldown).",
       "Local DuckDB storage with telemetry schema, WAL recovery, and migration support.",
       "Overview analytics page (totals, averages, battery usage).",
-      "Flight list with rename, delete, filters (date range, drone, battery).",
+      "Flight list with rename, delete, filters (date range, drone, battery), search, and sorting.",
       "Settings: API key, units (metric/imperial), theme (light/dark/system), delete-all logs.",
+      "Settings: shows app data + log directory for troubleshooting.",
       "Charts: height/VPS/speed (metric in km/h), battery, attitude, RC signal, GPS satellites.",
+      "Charts: RC uplink/downlink, distance-to-home, velocity X/Y/Z.",
       "Charts: synchronized zoom, reset zoom, auto-scaled Y axes, aligned X-axis ticks, custom tooltip header with pills.",
       "Map: 3D terrain view via MapLibre, global theme styling.",
+      "Map: satellite style toggle, gradient flight path with start/end markers.",
+      "Map: deck.gl 3D path overlay; map toggles persist in session.",
+      "Export: CSV/JSON/GPX/KML downloads from flight stats.",
+      "Logging: app logs via tauri-plugin-log (console + file).",
       "UI polish: theme variables, tag styling for device/serials, modal scrollbar lock.",
       "Data safety: DB backup, corruption handling, telemetry rebuild when column order mismatches."
     ],
@@ -115,6 +124,9 @@
       "flight_list": "Added date range popup, drone and battery filters with compact styling.",
       "date_picker": "Modern range picker (react-day-picker), future dates disabled, themed styling."
     },
+    "flight_list": {
+      "search_sort": "Search by partial title and sort by date/name with direction toggle."
+    },
     "ui": {
       "selects": "Custom select styling to match dark/light themes, consistent background and text.",
       "collapsed_sidebar": "Collapsed width increased by ~20%.",
@@ -122,6 +134,20 @@
       "charts": "Light theme gridlines, auto axis ranges with rounding, right padding to avoid label clipping, RC ticks fixed (0/50/100).",
       "battery_chart": "Low battery region shown as semi-transparent red band; voltage plotted on hidden axis, temp labeled on right.",
       "gps_chart": "Height increased to 200px."
+    },
+    "exports": {
+      "flight_stats": "Export dropdown for CSV/JSON/GPX/KML with derived distance-to-home in JSON/CSV."
+    },
+    "charts": {
+      "telemetry": "Added RC uplink/downlink, distance-to-home, and velocity XYZ panels."
+    },
+    "map": {
+      "visuals": "Gradient path with start/end markers and modern toggle UI.",
+      "layers": "deck.gl 3D path overlay with session-persisted toggles.",
+      "styles": "Satellite basemap toggle and 3D terrain improvements."
+    },
+    "logging": {
+      "tauri": "tauri-plugin-log enabled; console attached in frontend; log directory exposed in Settings."
     }
   },
   "behavior": {
@@ -147,9 +173,15 @@
     "telemetry": {
       "fields": [
         "time",
+        "latitude",
+        "longitude",
         "height",
         "vpsHeight",
+        "altitude",
         "speed",
+        "velocityX",
+        "velocityY",
+        "velocityZ",
         "battery",
         "batteryVoltage",
         "batteryTemp",
@@ -157,8 +189,10 @@
         "roll",
         "yaw",
         "rcSignal",
+        "rcUplink",
+        "rcDownlink",
         "satellites",
-        "altitude"
+        "distanceToHome"
       ]
     }
   },
@@ -212,7 +246,9 @@
         "flight_mode",
         "gps_signal",
         "satellites",
-        "rc_signal"
+        "rc_signal",
+        "rc_uplink",
+        "rc_downlink"
       ],
       "keychains": [
         "serial_number",
@@ -223,7 +259,8 @@
     "notes": [
       "Telemetry table column order is enforced; if mismatched it rebuilds automatically.",
       "Bulk inserts use DuckDB Appender matching the exact column order above.",
-      "Downsampling occurs when telemetry points exceed ~5000 (1s buckets)."
+      "Downsampling occurs when telemetry points exceed ~5000 (1s buckets).",
+      "Map track altitude uses COALESCE(height, vps_height, altitude) for relative 3D paths."
     ]
   },
   "parser": {

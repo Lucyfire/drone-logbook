@@ -16,12 +16,18 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ['**/src-tauri/**'],
+      ignored: ['**/src-tauri/**', '**/src-tauri/target/**'],
     },
   },
   // Optimize deps for Tauri
   optimizeDeps: {
-    exclude: ['@tauri-apps/api', '@tauri-apps/plugin-dialog', '@tauri-apps/plugin-fs'],
+    exclude: [
+      '@tauri-apps/api',
+      '@tauri-apps/plugin-dialog',
+      '@tauri-apps/plugin-fs',
+      '@tauri-apps/plugin-log',
+      '@tauri-apps/plugin-shell',
+    ],
   },
   build: {
     // Tauri uses Chromium on Windows/Linux and WebKit on macOS

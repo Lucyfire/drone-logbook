@@ -83,6 +83,8 @@ export function Dashboard() {
     }
   }, [activeView, loadOverview]);
 
+  const appIcon = new URL('../../../src-tauri/icons/icon.png', import.meta.url).href;
+
   return (
     <div className={`flex h-screen ${showSettings ? 'modal-open' : ''}`}>
       {/* Settings Modal */}
@@ -97,19 +99,13 @@ export function Dashboard() {
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
-              <svg
-                className="w-6 h-6 text-dji-primary"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 3l14 9-14 9V3z"
-                />
-              </svg>
+              <img
+                src={appIcon}
+                alt="DJI Log Viewer"
+                className="w-6 h-6 rounded-md"
+                loading="lazy"
+                decoding="async"
+              />
               DJI Log Viewer
             </h1>
             <p className="text-xs text-gray-400 mt-1">

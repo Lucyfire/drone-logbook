@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="src-tauri/icons/icon.png" alt="DJI Log Viewer" width="96" />
+</p>
+
 # DJI Flight Log Viewer
 
 A high-performance desktop application for analyzing DJI drone flight logs. Built with Tauri v2, DuckDB, and React.
@@ -5,15 +9,17 @@ A high-performance desktop application for analyzing DJI drone flight logs. Buil
 ## Features
 
 - 📊 **High-Performance Analytics**: DuckDB-powered analytical queries with automatic downsampling for large datasets
-- 🗺️ **Interactive Flight Maps**: View your flight path with MapLibre GL (3D terrain supported)
-- 📈 **Telemetry Charts**: ECharts-based visualization of height/VPS, speed (km/h in metric), battery, attitude, RC, and GPS
+- 🗺️ **Interactive Flight Maps**: MapLibre GL with 3D terrain, satellite toggle, start/end markers, and a deck.gl 3D path overlay
+- 📈 **Telemetry Charts**: Height/VPS, speed, battery, attitude, RC signal, GPS satellites, RC uplink/downlink, distance-to-home, and velocity X/Y/Z
 - 🔐 **V13+ Log Support**: Automatic encryption key handling for newer DJI logs
 - 💾 **Local-First**: All data stored locally in a single DuckDB database
-- 🎛️ **Filters & Search**: Date range picker, drone/device filter, and battery serial filter
+- 🎛️ **Filters, Search & Sort**: Date range picker, drone/device filter, battery serial filter, search, and sorting
 - 🧭 **Overview Dashboard**: Aggregate totals, averages, and battery usage insights
 - 🎨 **Theme & Units**: Light/Dark/System theme and Metric/Imperial units
 - ✏️ **Editable Flight Names**: Rename flights directly in the sidebar
 - 🔍 **Synced Zoom**: Pan/zoom charts together with reset zoom
+- 📦 **Exports**: CSV, JSON, GPX, and KML export from the flight stats bar
+- 🧾 **App Logging**: File + console logs via tauri-plugin-log; log directory shown in Settings
 - 🚀 **Cross-Platform**: Works on Windows, macOS, and Linux
 
 ## Tech Stack
@@ -30,6 +36,7 @@ A high-performance desktop application for analyzing DJI drone flight logs. Buil
 - **Zustand**: State management
 - **ECharts**: Telemetry charting
 - **react-map-gl + MapLibre**: Map visualization
+- **deck.gl**: 3D flight path overlay
 
 ## Prerequisites
 
@@ -110,9 +117,10 @@ The built application will be in `src-tauri/target/release/bundle/`.
 
 1. **Import a Flight Log**: Click "Browse Files" or drag-and-drop a DJI log file
 2. **Select a Flight**: Click on a flight in the sidebar
-3. **Analyze Data**: View telemetry charts and flight path on the map
-4. **Filter Flights**: Use date range, drone/device, and battery serial filters
-5. **Configure Settings**: Set API key, theme, and units in Settings
+3. **Analyze Data**: View telemetry charts and the 3D flight path on the map
+4. **Filter/Search/Sort**: Use date range, drone/device, battery serial filters, search, and sorting
+5. **Export**: Use the Export dropdown in the stats bar (CSV/JSON/GPX/KML)
+6. **Configure Settings**: Set API key, theme, units, and view app data/log directories
 
 ## Supported Log Formats
 
@@ -131,6 +139,7 @@ The built application will be in `src-tauri/target/release/bundle/`.
 
 - **DJI API Key**: Stored locally in `config.json` (never sent to third parties except DJI API). You can also provide it via `.env`.
 - **Database Location**: Stored in the platform-specific app data directory (e.g., AppData on Windows, Application Support on macOS, and local share on Linux).
+- **Log Files**: App logs are written to the platform-specific log directory and surfaced in Settings.
 
 ## License
 

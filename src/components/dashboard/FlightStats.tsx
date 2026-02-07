@@ -349,12 +349,12 @@ interface StatCardProps {
 
 function StatCard({ label, value, icon, alert }: StatCardProps) {
   return (
-    <div className="bg-dji-surface/50 rounded-lg px-3 py-2 border border-gray-700/50">
-      <div className="flex items-center gap-2">
-        <div className={`${alert ? 'text-red-400' : 'text-dji-primary'}`}>
-          {icon}
-        </div>
-        <div>
+    <div className="bg-dji-surface/50 rounded-lg px-3 py-2 border border-gray-700/50 text-center">
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex items-center justify-center gap-2">
+          <div className={`${alert ? 'text-red-400' : 'text-dji-primary'}`}>
+            {icon}
+          </div>
           <p
             className={`text-lg font-semibold ${
               alert ? 'text-red-400' : 'text-white'
@@ -362,8 +362,8 @@ function StatCard({ label, value, icon, alert }: StatCardProps) {
           >
             {value}
           </p>
-          <p className="text-xs text-gray-500">{label}</p>
         </div>
+        <p className="text-xs text-gray-500">{label}</p>
       </div>
     </div>
   );
