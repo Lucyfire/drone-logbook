@@ -15,7 +15,7 @@
     "os": "Linux",
     "runtime": {
       "node": "18.x",
-      "rust": "stable (1.70+)",
+      "rust": "stable (1.85+ required by DuckDB)",
       "tauri_cli": "2.x"
     }
   },
@@ -142,7 +142,8 @@
     },
     "docker": {
       "dockerfile": "Dockerfile",
-      "compose": "docker-compose.yml",
+      "compose": "docker-compose.yml (pre-built GHCR image)",
+      "compose_build": "docker-compose-build.yml (build from source)",
       "nginx_conf": "docker/nginx.conf",
       "entrypoint": "docker/entrypoint.sh"
     },
@@ -188,13 +189,13 @@
   "recent_changes": {
     "docker_web_mode": {
       "description": "Added Docker/web deployment mode using Cargo feature flags.",
-      "server": "src-tauri/src/server.rs - Axum REST API with all 11 endpoints mirroring Tauri commands.",
+      "server": "src-tauri/src/server.rs - Axum REST API with all 11 endpoints mirroring Tauri commands. DefaultBodyLimit set to 250MB for large flight log uploads.",
       "api_adapter": "src/lib/api.ts - unified interface: invoke() for Tauri, fetch() for web. Lazy-loads @tauri-apps imports.",
       "feature_flags": "Cargo.toml: tauri-app (default) and web features. All Tauri deps are optional.",
       "main_rs": "Feature-gated: mod tauri_app for desktop, run_web() for Axum server.",
       "frontend_components": "FlightImporter, FlightList, FlightStats, SettingsModal updated with isWebMode() guards and dynamic imports.",
       "vite_config": "Web mode: /api proxy, conditional optimizeDeps, es2022 build target.",
-      "docker": "Multi-stage Dockerfile (rust:1.85 -> node:20 -> nginx:stable), docker-compose.yml, nginx.conf, entrypoint.sh.",
+      "docker": "Multi-stage Dockerfile (rust:1.85 -> node:20 -> nginx:stable), docker-compose.yml (GHCR image), docker-compose-build.yml (local build), nginx.conf, entrypoint.sh.",
       "npm_scripts": "Added dev:web and build:web scripts with VITE_BACKEND=web."
     },
     "dead_code_cleanup": {
@@ -364,8 +365,9 @@
       "npm run tauri:nowatch  - Tauri dev without file watching"
     ],
     "docker": [
-      "docker compose up -d           - Run with docker-compose",
-      "docker compose up --build -d   - Rebuild and run"
+      "docker compose up -d                                    - Run with pre-built GHCR image",
+      "docker compose -f docker-compose-build.yml up -d          - Build from source and run",
+      "docker compose -f docker-compose-build.yml up --build -d  - Force rebuild from source"
     ]
   },
   "ci_cd": {
@@ -379,7 +381,7 @@
       "trigger": "on release published + manual dispatch",
       "registry": "ghcr.io",
       "image": "ghcr.io/arpanghosh8453/dji-logbook",
-      "tags": "latest + version tag from release"
+      "tags": "semver (e.g. 1.2.3, 1.2) + latest (auto) on release; custom tag on manual dispatch"
     }
   },
   "ui": {
@@ -402,7 +404,7 @@
     "db_location_docker": "/data/dji-logviewer (persistent volume)",
     "log_location": "Log files under ~/.local/share/com.dji-logviewer.app/logs/ (desktop) or stdout (Docker)",
     "git": {
-      "branch": "master"
+      "branch": "main"
     }
   }
 }

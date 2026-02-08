@@ -89,11 +89,13 @@ npm install
 npm run tauri
 ```
 
-## Docker deployment (Self-hosted web version)
+## Docker deployment (Self-hosted Web)
 
 The app can also be deployed as a self-hosted web application using Docker. This uses an Axum REST backend instead of Tauri IPC, with Nginx serving the frontend and proxying API requests.
 
-### Using pre-built image from GitHub Container Registry
+### Quick start (recommended)
+
+Pull the pre-built image from GitHub Container Registry:
 
 ```bash
 docker pull ghcr.io/arpanghosh8453/dji-logbook:latest
@@ -105,9 +107,7 @@ docker run -d \
   ghcr.io/arpanghosh8453/dji-logbook:latest
 ```
 
-Then open http://localhost:8080 in your browser.
-
-### Using docker-compose
+Or use docker-compose (uses the same pre-built image):
 
 ```bash
 git clone https://github.com/arpanghosh8453/dji-logbook
@@ -115,7 +115,23 @@ cd dji-logbook
 docker compose up -d
 ```
 
-This builds the image locally and starts the container on port 8080 with a persistent volume for your flight data.
+Then open http://localhost:8080 in your browser.
+
+### Building locally from source
+
+If you want to build the Docker image from source instead of pulling the pre-built one:
+
+```bash
+git clone https://github.com/arpanghosh8453/dji-logbook
+cd dji-logbook
+docker compose -f docker-compose-build.yml up -d
+```
+
+> **Note:** The initial build takes ~10–15 minutes (Rust compilation). Subsequent rebuilds are much faster thanks to Docker layer caching.
+
+### Data persistence
+
+All flight data (DuckDB database, cached decryption keys) is stored in a Docker named volume (`dji-data`) mapped to `/data/dji-logviewer` internally inside the container. Data persists across container restarts, image updates, and rebuilds. It is only removed if you explicitly delete the volume with `docker compose down -v`.
 
 ### Environment variables
 
@@ -123,8 +139,7 @@ This builds the image locally and starts the container on port 8080 with a persi
 |------------|------------------------|--------------------------------|
 | `DATA_DIR` | `/data/dji-logviewer`  | Database and config storage    |
 | `RUST_LOG` | `info`                 | Log level (debug, info, warn)  |
-| `HOST`     | `0.0.0.0`             | Backend bind address           |
-| `PORT`     | `3001`                 | Backend port (internal)        |
+
 
 ## Configuration
 
@@ -183,7 +198,8 @@ This builds the image locally and starts the container on port 8080 with a persi
 │   └── entrypoint.sh        # Container startup script
 │
 ├── Dockerfile               # Multi-stage build
-├── docker-compose.yml       # One-command deployment
+├── docker-compose.yml       # Deploy with pre-built GHCR image
+├── docker-compose-build.yml # Build from source locally
 │
 └── [App Data Directory]     # RUNTIME DATA
     ├── flights.db           # DuckDB database
