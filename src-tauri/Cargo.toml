@@ -62,6 +62,9 @@ dirs = "5"
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

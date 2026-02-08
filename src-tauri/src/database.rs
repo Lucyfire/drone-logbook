@@ -44,16 +44,14 @@ impl Database {
     /// Initialize the database in the app data directory.
     ///
     /// Creates the following directory structure:
-    /// ```
+    /// ```text
     /// {app_data_dir}/
     /// ├── flights.db       # DuckDB database file
-    /// ├── raw_logs/        # Original log files
     /// └── keychains/       # Cached decryption keys
     /// ```
     pub fn new(app_data_dir: PathBuf) -> Result<Self, DatabaseError> {
         // Ensure directory structure exists
         fs::create_dir_all(&app_data_dir)?;
-        fs::create_dir_all(app_data_dir.join("raw_logs"))?;
         fs::create_dir_all(app_data_dir.join("keychains"))?;
 
         let db_path = app_data_dir.join("flights.db");
@@ -331,11 +329,6 @@ impl Database {
         Ok(())
     }
 
-    /// Get the path to the raw_logs directory
-    pub fn raw_logs_dir(&self) -> PathBuf {
-        self.data_dir.join("raw_logs")
-    }
-
     /// Get the path to the keychains directory
     pub fn keychains_dir(&self) -> PathBuf {
         self.data_dir.join("keychains")
@@ -470,6 +463,7 @@ impl Database {
 
     /// Get all flights metadata (for the flight list sidebar)
     pub fn get_all_flights(&self) -> Result<Vec<Flight>, DatabaseError> {
+        let start = std::time::Instant::now();
         let conn = self.conn.lock().unwrap();
 
         let mut stmt = conn.prepare(
@@ -507,6 +501,7 @@ impl Database {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
+        log::debug!("get_all_flights: {} rows in {:.1}ms", flights.len(), start.elapsed().as_secs_f64() * 1000.0);
         Ok(flights)
     }
 
@@ -817,6 +812,7 @@ impl Database {
 
     /// Delete a flight and all associated telemetry data
     pub fn delete_flight(&self, flight_id: i64) -> Result<(), DatabaseError> {
+        let start = std::time::Instant::now();
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
@@ -825,23 +821,25 @@ impl Database {
         )?;
         conn.execute("DELETE FROM flights WHERE id = ?", params![flight_id])?;
 
-        log::info!("Deleted flight {}", flight_id);
+        log::info!("Deleted flight {} in {:.1}ms", flight_id, start.elapsed().as_secs_f64() * 1000.0);
         Ok(())
     }
 
     /// Delete all flights and associated telemetry
     pub fn delete_all_flights(&self) -> Result<(), DatabaseError> {
+        let start = std::time::Instant::now();
         let conn = self.conn.lock().unwrap();
 
         conn.execute("DELETE FROM telemetry", params![])?;
         conn.execute("DELETE FROM flights", params![])?;
 
-        log::info!("Deleted all flights and telemetry");
+        log::info!("Deleted all flights and telemetry in {:.1}ms", start.elapsed().as_secs_f64() * 1000.0);
         Ok(())
     }
 
     /// Get overview stats across all flights
     pub fn get_overview_stats(&self) -> Result<OverviewStats, DatabaseError> {
+        let start = std::time::Instant::now();
         let conn = self.conn.lock().unwrap();
 
         // Basic aggregate stats
@@ -1036,6 +1034,12 @@ impl Database {
             .map(|f| f.max_distance_from_home_m)
             .unwrap_or(0.0);
 
+        log::debug!(
+            "get_overview_stats: {} flights, {} batteries, {} drones in {:.1}ms",
+            total_flights, batteries_used.len(), drones_used.len(),
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+
         Ok(OverviewStats {
             total_flights,
             total_distance_m: total_distance,
@@ -1061,6 +1065,7 @@ impl Database {
             params![display_name, flight_id],
         )?;
 
+        log::debug!("Updated flight {} display name to '{}'", flight_id, display_name);
         Ok(())
     }
 
@@ -1125,7 +1130,6 @@ mod tests {
         let db = Database::new(temp_dir.path().to_path_buf()).unwrap();
 
         // Verify directories were created
-        assert!(temp_dir.path().join("raw_logs").exists());
         assert!(temp_dir.path().join("keychains").exists());
         assert!(temp_dir.path().join("flights.db").exists());
 

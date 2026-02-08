@@ -125,7 +125,7 @@ npm run tauri
 │
 └── [App Data Directory]     # RUNTIME DATA
     ├── flights.db           # DuckDB database
-    ├── raw_logs/            # Original log files
+
     └── keychains/           # Cached decryption keys
 ```
 

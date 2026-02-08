@@ -5,14 +5,18 @@
 //! - Extracting telemetry data points
 //! - File hash calculation for duplicate detection
 //! - V13+ encrypted log handling with API key fetching
+//! - Panic/timeout protection for untrusted file parsing
 
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
+use std::panic;
 use std::path::Path;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use tokio::time::timeout;
 
 use dji_log_parser::frame::Frame;
 use dji_log_parser::DJILog;
@@ -20,6 +24,9 @@ use dji_log_parser::DJILog;
 use crate::api::DjiApi;
 use crate::database::Database;
 use crate::models::{FlightMetadata, FlightStats, TelemetryPoint};
+
+/// Maximum time allowed for parsing a single log file (seconds)
+const PARSE_TIMEOUT_SECS: u64 = 40;
 
 #[derive(Error, Debug)]
 pub enum ParserError {
@@ -40,6 +47,12 @@ pub enum ParserError {
 
     #[error("API error: {0}")]
     Api(String),
+
+    #[error("Parser crashed on this file (internal panic)")]
+    Panic(String),
+
+    #[error("Parsing timed out after {0} seconds — file may be corrupt or unsupported")]
+    Timeout(u64),
 }
 
 /// Result of parsing a DJI log file
@@ -80,71 +93,95 @@ impl<'a> LogParser<'a> {
         Ok(format!("{:x}", hasher.finalize()))
     }
 
-    /// Copy log file to the raw_logs directory
-    pub fn archive_log_file(&self, source_path: &Path) -> Result<String, ParserError> {
-        let file_name = source_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown.log");
-
-        let dest_path = self.db.raw_logs_dir().join(file_name);
-
-        // If file already exists, add timestamp suffix
-        let final_path = if dest_path.exists() {
-            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-            let stem = source_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("log");
-            let ext = source_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("txt");
-            self.db
-                .raw_logs_dir()
-                .join(format!("{}_{}.{}", stem, timestamp, ext))
-        } else {
-            dest_path
-        };
-
-        fs::copy(source_path, &final_path)?;
-
-        Ok(final_path.to_string_lossy().to_string())
-    }
-
     /// Parse a DJI log file and extract all telemetry data
     pub async fn parse_log(&self, file_path: &Path) -> Result<ParseResult, ParserError> {
-        log::info!("Parsing log file: {:?}", file_path);
+        let parse_start = std::time::Instant::now();
+        let file_size = fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+        log::info!(
+            "Parsing log file: {:?} (size: {:.1} KB)",
+            file_path,
+            file_size as f64 / 1024.0
+        );
 
         // Calculate file hash to check for duplicates
         let file_hash = Self::calculate_file_hash(file_path)?;
+        log::debug!("File hash: {}", file_hash);
 
         if self
             .db
             .is_file_imported(&file_hash)
             .map_err(|e| ParserError::Parse(e.to_string()))?
         {
+            log::info!("File already imported (hash match), skipping");
             return Err(ParserError::AlreadyImported);
         }
 
         // Read the file
         let file_data = fs::read(file_path)?;
+        log::debug!("File read into memory: {} bytes", file_data.len());
 
-        // Parse with dji-log-parser
-        let parser = DJILog::from_bytes(file_data).map_err(|e| ParserError::Parse(e.to_string()))?;
+        // Parse with dji-log-parser inside spawn_blocking + catch_unwind
+        // This prevents a panicking/hanging parser from killing the app
+        let parser = {
+            let data = file_data.clone();
+            let result = timeout(
+                Duration::from_secs(PARSE_TIMEOUT_SECS),
+                tokio::task::spawn_blocking(move || {
+                    panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                        DJILog::from_bytes(data)
+                    }))
+                }),
+            )
+            .await;
+
+            match result {
+                Err(_) => return Err(ParserError::Timeout(PARSE_TIMEOUT_SECS)),
+                Ok(Err(join_err)) => return Err(ParserError::Panic(format!("Task join error: {}", join_err))),
+                Ok(Ok(Err(panic_val))) => {
+                    let msg = panic_val
+                        .downcast_ref::<String>()
+                        .map(|s| s.clone())
+                        .or_else(|| panic_val.downcast_ref::<&str>().map(|s| s.to_string()))
+                        .unwrap_or_else(|| "unknown panic".to_string());
+                    return Err(ParserError::Panic(msg));
+                }
+                Ok(Ok(Ok(parse_result))) => {
+                    parse_result.map_err(|e| ParserError::Parse(e.to_string()))?
+                }
+            }
+        };
+
+        log::info!(
+            "DJILog parsed: version={}, product={:?}, aircraft_sn={}, aircraft_name={}, battery_sn={}, total_time={:.1}s",
+            parser.version,
+            parser.details.product_type,
+            parser.details.aircraft_sn,
+            parser.details.aircraft_name,
+            parser.details.battery_sn,
+            parser.details.total_time
+        );
 
         // Check if we need an encryption key for V13+ logs
         let frames = self.get_frames(&parser).await?;
+        log::info!("Extracted {} frames from log", frames.len());
 
         if frames.is_empty() {
+            log::warn!("No frames extracted from log file — file may be empty or corrupt");
             return Err(ParserError::NoTelemetryData);
         }
 
         // Extract telemetry points
         let details_total_time_secs = parser.details.total_time as f64;
         let points = self.extract_telemetry(&frames, details_total_time_secs);
+        log::info!(
+            "Extracted {} valid telemetry points from {} frames ({} skipped)",
+            points.len(),
+            frames.len(),
+            frames.len() - points.len()
+        );
 
         if points.is_empty() {
+            log::warn!("No valid telemetry points after filtering — all frames had corrupt/missing data");
             return Err(ParserError::NoTelemetryData);
         }
 
@@ -191,26 +228,88 @@ impl<'a> LogParser<'a> {
             point_count: points.len() as i32,
         };
 
+        log::info!(
+            "Parse complete in {:.1}s: duration={:.1}s, distance={:.0}m, max_alt={:.1}m, max_speed={:.1}m/s, home={:?}, points={}",
+            parse_start.elapsed().as_secs_f64(),
+            stats.duration_secs,
+            stats.total_distance_m,
+            stats.max_altitude_m,
+            stats.max_speed_ms,
+            stats.home_location,
+            points.len()
+        );
+
         Ok(ParseResult { metadata, points })
     }
 
-    /// Get frames from the parser, handling encryption if needed
+    /// Get frames from the parser, handling encryption if needed.
+    /// Runs the CPU-bound parsing in spawn_blocking with catch_unwind
+    /// to prevent panics from crashing the application.
     async fn get_frames(&self, parser: &DJILog) -> Result<Vec<Frame>, ParserError> {
         // Version 13+ requires keychains for decryption
-        if parser.version >= 13 {
-            let api_key = self.api.get_api_key().ok_or(ParserError::EncryptionKeyRequired)?;
-            let keychains = parser
+        let keychains = if parser.version >= 13 {
+            log::info!("Log version {} >= 13, fetching keychains for decryption", parser.version);
+            let api_key = self.api.get_api_key().ok_or_else(|| {
+                log::error!("No DJI API key configured — cannot decrypt V13+ log");
+                ParserError::EncryptionKeyRequired
+            })?;
+            let kc = parser
                 .fetch_keychains(&api_key)
-                .map_err(|e| ParserError::Api(e.to_string()))?;
-            return parser
-                .frames(Some(keychains))
-                .map_err(|e| ParserError::Parse(e.to_string()));
-        }
+                .map_err(|e| {
+                    log::error!("Keychain fetch failed: {}", e);
+                    ParserError::Api(e.to_string())
+                })?;
+            log::info!("Keychains fetched successfully ({} chains)", kc.len());
+            Some(kc)
+        } else {
+            log::debug!("Log version {} < 13, no decryption needed", parser.version);
+            None
+        };
 
-        // Pre-13 logs are unencrypted
-        parser
-            .frames(None)
-            .map_err(|e| ParserError::Parse(e.to_string()))
+        // Clone what we need to move into spawn_blocking
+        // DJILog doesn't implement Clone, so we need to use a raw pointer trick
+        // Instead, we'll re-read the data inside the blocking task
+        // Actually, frames() borrows self, so we need an unsafe approach or restructure.
+        // The simplest safe approach: since parser is on the stack, use a scoped approach.
+        // We use `unsafe` pointer cast to send the parser ref into spawn_blocking.
+        // This is safe because we await the result immediately (parser outlives the task).
+        let parser_ptr = parser as *const DJILog as usize;
+        let result = timeout(
+            Duration::from_secs(PARSE_TIMEOUT_SECS),
+            tokio::task::spawn_blocking(move || {
+                let parser_ref = unsafe { &*(parser_ptr as *const DJILog) };
+                panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                    parser_ref.frames(keychains)
+                }))
+            }),
+        )
+        .await;
+
+        match result {
+            Err(_) => {
+                log::error!("frames() timed out after {}s", PARSE_TIMEOUT_SECS);
+                Err(ParserError::Timeout(PARSE_TIMEOUT_SECS))
+            }
+            Ok(Err(join_err)) => {
+                log::error!("frames() task join error: {}", join_err);
+                Err(ParserError::Panic(format!("Task join error: {}", join_err)))
+            }
+            Ok(Ok(Err(panic_val))) => {
+                let msg = panic_val
+                    .downcast_ref::<String>()
+                    .map(|s| s.clone())
+                    .or_else(|| panic_val.downcast_ref::<&str>().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                log::error!("frames() panicked: {}", msg);
+                Err(ParserError::Panic(msg))
+            }
+            Ok(Ok(Ok(frames_result))) => {
+                frames_result.map_err(|e| {
+                    log::error!("frames() returned error: {}", e);
+                    ParserError::Parse(e.to_string())
+                })
+            }
+        }
     }
 
     /// Extract telemetry points from parsed frames
@@ -218,8 +317,16 @@ impl<'a> LogParser<'a> {
         let mut points = Vec::with_capacity(frames.len());
         let mut timestamp_ms: i64 = 0;
 
+        // Counters for logging
+        let mut skipped_corrupt: usize = 0;
+        let mut skipped_no_gps: usize = 0;
+        let mut skipped_out_of_range: usize = 0;
+        let mut skipped_alt_clamp: usize = 0;
+        let mut skipped_speed_clamp: usize = 0;
+
         // Check if any frame has a non-zero fly_time
         let has_fly_time = frames.iter().any(|f| f.osd.fly_time > 0.0);
+        log::debug!("fly_time available: {}", has_fly_time);
 
         // When fly_time is unavailable, compute interval from header duration
         // instead of assuming 100ms (10Hz), which inflates duration for high-rate logs
@@ -241,31 +348,66 @@ impl<'a> LogParser<'a> {
                 timestamp_ms
             };
 
+            // Validate core numeric fields — skip entire frame if data is corrupt
+            // (e.g. the parser produced garbage like lat=-6.6e-136, lon=5.7e+139)
+            if !is_finite_f64(osd.latitude)
+                || !is_finite_f64(osd.longitude)
+                || !is_finite_f32(osd.altitude)
+                || !is_finite_f32(osd.height)
+                || !is_finite_f32(osd.x_speed)
+                || !is_finite_f32(osd.y_speed)
+                || !is_finite_f32(osd.z_speed)
+            {
+                // Increment timestamp and skip this corrupt frame
+                if skipped_corrupt < 5 {
+                    log::debug!(
+                        "Skipping corrupt frame at {}ms: lat={}, lon={}, alt={}, height={}, vx={}, vy={}, vz={}",
+                        current_timestamp_ms,
+                        osd.latitude, osd.longitude, osd.altitude, osd.height,
+                        osd.x_speed, osd.y_speed, osd.z_speed
+                    );
+                }
+                skipped_corrupt += 1;
+                timestamp_ms = current_timestamp_ms + fallback_interval_ms;
+                continue;
+            }
+
             let mut point = TelemetryPoint {
                 timestamp_ms: current_timestamp_ms,
                 ..Default::default()
             };
 
-            // Filter out 0,0 GPS coordinates (no GPS lock yet)
-            // Keep the point for non-GPS data but set lat/lon to None
+            // Filter out invalid GPS coordinates:
+            //  - 0,0 means no GPS lock
+            //  - Values outside physical range (lat ±90, lon ±180) are corrupt data
             let has_gps_lock = !(osd.latitude.abs() < 1e-6 && osd.longitude.abs() < 1e-6);
-            if has_gps_lock {
+            let gps_in_range = osd.latitude.abs() <= 90.0 && osd.longitude.abs() <= 180.0;
+            if has_gps_lock && gps_in_range {
                 point.latitude = Some(osd.latitude);
                 point.longitude = Some(osd.longitude);
+            } else if has_gps_lock && !gps_in_range {
+                skipped_out_of_range += 1;
+            } else {
+                skipped_no_gps += 1;
             }
             // else: latitude/longitude remain None (from Default)
 
-            point.altitude = Some(osd.altitude as f64);
-            point.height = Some(osd.height as f64);
+            // Clamp altitude/height to physically plausible range (reject garbage)
+            let alt = osd.altitude as f64;
+            let height = osd.height as f64;
+            point.altitude = if alt.abs() < 10_000.0 { Some(alt) } else { skipped_alt_clamp += 1; None };
+            point.height = if height.abs() < 10_000.0 { Some(height) } else { skipped_alt_clamp += 1; None };
             point.vps_height = Some(osd.vps_height as f64);
-            point.speed = if has_gps_lock {
-                Some((osd.x_speed.powi(2) + osd.y_speed.powi(2)).sqrt() as f64)
+
+            point.speed = if has_gps_lock && gps_in_range {
+                let spd = (osd.x_speed.powi(2) + osd.y_speed.powi(2)).sqrt() as f64;
+                if spd < 100.0 { Some(spd) } else { skipped_speed_clamp += 1; None } // >100 m/s is clearly garbage
             } else {
                 None // Speed from 0,0 origin is meaningless
             };
-            point.velocity_x = if has_gps_lock { Some(osd.x_speed as f64) } else { None };
-            point.velocity_y = if has_gps_lock { Some(osd.y_speed as f64) } else { None };
-            point.velocity_z = if has_gps_lock { Some(osd.z_speed as f64) } else { None };
+            point.velocity_x = if has_gps_lock && gps_in_range { Some(osd.x_speed as f64) } else { None };
+            point.velocity_y = if has_gps_lock && gps_in_range { Some(osd.y_speed as f64) } else { None };
+            point.velocity_z = if has_gps_lock && gps_in_range { Some(osd.z_speed as f64) } else { None };
             point.pitch = Some(osd.pitch as f64);
             point.roll = Some(osd.roll as f64);
             point.yaw = Some(osd.yaw as f64);
@@ -290,6 +432,19 @@ impl<'a> LogParser<'a> {
 
             // Increment timestamp using computed interval
             timestamp_ms = current_timestamp_ms + fallback_interval_ms;
+        }
+
+        // Log extraction summary
+        if skipped_corrupt > 0 || skipped_out_of_range > 0 || skipped_alt_clamp > 0 || skipped_speed_clamp > 0 {
+            log::warn!(
+                "Telemetry filtering: {} corrupt frames skipped, {} GPS out-of-range, {} no-GPS-lock, {} altitude clamped, {} speed clamped",
+                skipped_corrupt, skipped_out_of_range, skipped_no_gps, skipped_alt_clamp, skipped_speed_clamp
+            );
+        } else {
+            log::debug!(
+                "Telemetry extraction clean: {} points, {} frames without GPS lock",
+                points.len(), skipped_no_gps
+            );
         }
 
         points
@@ -437,4 +592,16 @@ fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let c = 2.0 * a.sqrt().asin();
 
     R * c
+}
+
+/// Check if an f64 value is finite (not NaN, not Inf)
+#[inline]
+fn is_finite_f64(v: f64) -> bool {
+    v.is_finite()
+}
+
+/// Check if an f32 value is finite (not NaN, not Inf)
+#[inline]
+fn is_finite_f32(v: f32) -> bool {
+    v.is_finite()
 }

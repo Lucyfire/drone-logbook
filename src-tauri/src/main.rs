@@ -49,17 +49,18 @@ fn init_database(app: &AppHandle) -> Result<Database, String> {
 /// Import a DJI flight log file
 ///
 /// This command:
-/// 1. Copies the file to the app's raw_logs directory
-/// 2. Parses the log file (handling V13+ encryption if needed)
-/// 3. Bulk inserts telemetry data into DuckDB
-/// 4. Returns the new flight ID
+/// 1. Parses the log file (handling V13+ encryption if needed)
+/// 2. Bulk inserts telemetry data into DuckDB
+/// 3. Returns the new flight ID
 #[tauri::command]
 async fn import_log(file_path: String, state: State<'_, AppState>) -> Result<ImportResult, String> {
+    let import_start = std::time::Instant::now();
     log::info!("Importing log file: {}", file_path);
 
     let path = PathBuf::from(&file_path);
 
     if !path.exists() {
+        log::warn!("File not found: {}", file_path);
         return Ok(ImportResult {
             success: false,
             flight_id: None,
@@ -71,15 +72,11 @@ async fn import_log(file_path: String, state: State<'_, AppState>) -> Result<Imp
     // Create parser instance
     let parser = LogParser::new(&state.db);
 
-    // Archive the original file
-    if let Err(e) = parser.archive_log_file(&path) {
-        log::warn!("Failed to archive log file: {}", e);
-    }
-
     // Parse the log file
     let parse_result = match parser.parse_log(&path).await {
         Ok(result) => result,
         Err(parser::ParserError::AlreadyImported) => {
+            log::info!("Skipping already-imported file: {}", file_path);
             return Ok(ImportResult {
                 success: false,
                 flight_id: None,
@@ -88,6 +85,7 @@ async fn import_log(file_path: String, state: State<'_, AppState>) -> Result<Imp
             });
         }
         Err(e) => {
+            log::error!("Failed to parse log {}: {}", file_path, e);
             return Ok(ImportResult {
                 success: false,
                 flight_id: None,
@@ -98,21 +96,38 @@ async fn import_log(file_path: String, state: State<'_, AppState>) -> Result<Imp
     };
 
     // Insert flight metadata
+    log::debug!("Inserting flight metadata: id={}", parse_result.metadata.id);
     let flight_id = state
         .db
         .insert_flight(&parse_result.metadata)
         .map_err(|e| format!("Failed to insert flight: {}", e))?;
 
-    // Bulk insert telemetry data
-    let point_count = state
+    // Bulk insert telemetry data — if this fails, clean up the flight metadata
+    let point_count = match state
         .db
         .bulk_insert_telemetry(flight_id, &parse_result.points)
-        .map_err(|e| format!("Failed to insert telemetry: {}", e))?;
+    {
+        Ok(count) => count,
+        Err(e) => {
+            log::error!("Failed to insert telemetry for flight {}: {}. Cleaning up.", flight_id, e);
+            // Remove the partially inserted flight so it doesn't leave a broken record
+            if let Err(cleanup_err) = state.db.delete_flight(flight_id) {
+                log::error!("Failed to clean up flight {}: {}", flight_id, cleanup_err);
+            }
+            return Ok(ImportResult {
+                success: false,
+                flight_id: None,
+                message: format!("Failed to insert telemetry data: {}", e),
+                point_count: 0,
+            });
+        }
+    };
 
     log::info!(
-        "Successfully imported flight {} with {} points",
+        "Successfully imported flight {} with {} points in {:.1}s",
         flight_id,
-        point_count
+        point_count,
+        import_start.elapsed().as_secs_f64()
     );
 
     Ok(ImportResult {
@@ -129,10 +144,13 @@ async fn import_log(file_path: String, state: State<'_, AppState>) -> Result<Imp
 /// Get all flights for the sidebar list
 #[tauri::command]
 async fn get_flights(state: State<'_, AppState>) -> Result<Vec<Flight>, String> {
-    state
+    let start = std::time::Instant::now();
+    let flights = state
         .db
         .get_all_flights()
-        .map_err(|e| format!("Failed to get flights: {}", e))
+        .map_err(|e| format!("Failed to get flights: {}", e))?;
+    log::debug!("get_flights returned {} flights in {:.1}ms", flights.len(), start.elapsed().as_secs_f64() * 1000.0);
+    Ok(flights)
 }
 
 /// Get complete flight data for visualization
@@ -147,7 +165,8 @@ async fn get_flight_data(
     max_points: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<FlightDataResponse, String> {
-    log::debug!("Fetching flight data for ID: {}", flight_id);
+    let start = std::time::Instant::now();
+    log::debug!("Fetching flight data for ID: {} (max_points: {:?})", flight_id, max_points);
 
     // Get flight metadata by ID (single row, not all flights)
     let flight = state
@@ -176,6 +195,14 @@ async fn get_flight_data(
     // This avoids a second database query entirely
     let track = telemetry.extract_track(2000);
 
+    log::debug!(
+        "get_flight_data for flight {} complete in {:.1}ms: {} telemetry series, {} track points",
+        flight_id,
+        start.elapsed().as_secs_f64() * 1000.0,
+        telemetry_records.len(),
+        track.len()
+    );
+
     Ok(FlightDataResponse {
         flight,
         telemetry,
@@ -186,15 +213,24 @@ async fn get_flight_data(
 /// Get overview stats for all flights
 #[tauri::command]
 async fn get_overview_stats(state: State<'_, AppState>) -> Result<OverviewStats, String> {
-    state
+    let start = std::time::Instant::now();
+    let stats = state
         .db
         .get_overview_stats()
-        .map_err(|e| format!("Failed to get overview stats: {}", e))
+        .map_err(|e| format!("Failed to get overview stats: {}", e))?;
+    log::debug!(
+        "get_overview_stats complete in {:.1}ms: {} flights, {:.0}m total distance",
+        start.elapsed().as_secs_f64() * 1000.0,
+        stats.total_flights,
+        stats.total_distance_m
+    );
+    Ok(stats)
 }
 
 /// Delete a flight and all its telemetry data
 #[tauri::command]
 async fn delete_flight(flight_id: i64, state: State<'_, AppState>) -> Result<bool, String> {
+    log::info!("Deleting flight: {}", flight_id);
     state
         .db
         .delete_flight(flight_id)
@@ -205,6 +241,7 @@ async fn delete_flight(flight_id: i64, state: State<'_, AppState>) -> Result<boo
 /// Delete all flights and telemetry
 #[tauri::command]
 async fn delete_all_flights(state: State<'_, AppState>) -> Result<bool, String> {
+    log::warn!("Deleting ALL flights and telemetry");
     state
         .db
         .delete_all_flights()
@@ -224,17 +261,13 @@ async fn update_flight_name(
         return Err("Display name cannot be empty".to_string());
     }
 
+    log::info!("Renaming flight {} to '{}'", flight_id, trimmed);
+
     state
         .db
         .update_flight_name(flight_id, trimmed)
         .map(|_| true)
         .map_err(|e| format!("Failed to update flight name: {}", e))
-}
-
-/// Get the raw_logs directory path for the frontend
-#[tauri::command]
-async fn get_raw_logs_dir(state: State<'_, AppState>) -> Result<String, String> {
-    Ok(state.db.raw_logs_dir().to_string_lossy().to_string())
 }
 
 /// Check if DJI API key is configured
@@ -281,7 +314,7 @@ pub fn run() {
                     Target::new(TargetKind::LogDir { file_name: None }),
                     Target::new(TargetKind::Stdout),
                 ])
-                .level(LevelFilter::Info)
+                .level(LevelFilter::Debug)
                 .build(),
         )
         .plugin(tauri_plugin_shell::init())
@@ -306,7 +339,6 @@ pub fn run() {
             delete_flight,
             delete_all_flights,
             update_flight_name,
-            get_raw_logs_dir,
             has_api_key,
             set_api_key,
             get_app_data_dir,

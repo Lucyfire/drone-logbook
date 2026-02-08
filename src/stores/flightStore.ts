@@ -79,7 +79,16 @@ export const useFlightStore = create<FlightState>((set, get) => ({
             : null;
         const lastSelectedId = lastSelectedRaw ? Number(lastSelectedRaw) : null;
         if (lastSelectedId && flights.some((flight) => flight.id === lastSelectedId)) {
-          await get().selectFlight(lastSelectedId);
+          try {
+            await get().selectFlight(lastSelectedId);
+          } catch {
+            // If auto-select fails on startup, clear the persisted ID so we don't crash-loop
+            console.warn('Auto-select of last flight failed, clearing lastSelectedFlightId');
+            if (typeof localStorage !== 'undefined') {
+              localStorage.removeItem('lastSelectedFlightId');
+            }
+            set({ selectedFlightId: null, currentFlightData: null, isLoading: false, error: null });
+          }
         }
       }
     } catch (err) {
@@ -143,8 +152,14 @@ export const useFlightStore = create<FlightState>((set, get) => ({
         localStorage.setItem('lastSelectedFlightId', String(flightId));
       }
     } catch (err) {
+      // Clear the persisted flight ID on error so we don't crash-loop on restart
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('lastSelectedFlightId');
+      }
       set({ 
         isLoading: false, 
+        selectedFlightId: null,
+        currentFlightData: null,
         error: `Failed to load flight data: ${err}` 
       });
     }
