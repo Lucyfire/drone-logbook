@@ -10,9 +10,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import * as api from '@/lib/api';
+import { isWebMode, downloadFile } from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
 import { formatDuration, formatDateTime, formatDistance } from '@/lib/utils';
 import { DayPicker, type DateRange } from 'react-day-picker';
@@ -560,13 +559,21 @@ ${points}
 
   const handleBulkExport = async (format: string, extension: string) => {
     try {
-      const dirPath = await open({ directory: true, multiple: false });
-      if (!dirPath) return;
-
       setIsExporting(true);
       setExportProgress({ done: 0, total: filteredFlights.length, currentFile: '' });
       
       const flightsData: { flight: Flight; data: FlightDataResponse }[] = [];
+
+      // In Tauri mode, pick a directory first
+      let dirPath: string | null = null;
+      if (!isWebMode()) {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        dirPath = await open({ directory: true, multiple: false }) as string | null;
+        if (!dirPath) {
+          setIsExporting(false);
+          return;
+        }
+      }
 
       for (let i = 0; i < filteredFlights.length; i++) {
         const flight = filteredFlights[i];
@@ -574,10 +581,7 @@ ${points}
         setExportProgress({ done: i, total: filteredFlights.length, currentFile: safeName });
         
         try {
-          const data: FlightDataResponse = await invoke('get_flight_data', {
-            flightId: flight.id,
-            maxPoints: 999999999,
-          });
+          const data: FlightDataResponse = await api.getFlightData(flight.id, 999999999);
 
           // Store for summary
           flightsData.push({ flight, data });
@@ -588,7 +592,12 @@ ${points}
           else if (format === 'gpx') content = buildGpx(data);
           else if (format === 'kml') content = buildKml(data);
 
-          await writeTextFile(`${dirPath}/${safeName}.${extension}`, content);
+          if (isWebMode()) {
+            downloadFile(`${safeName}.${extension}`, content);
+          } else {
+            const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+            await writeTextFile(`${dirPath}/${safeName}.${extension}`, content);
+          }
         } catch (err) {
           console.error(`Failed to export flight ${flight.id}:`, err);
         }
@@ -598,7 +607,12 @@ ${points}
       if (flightsData.length > 1) {
         try {
           const summaryCsv = buildSummaryCsv(flightsData);
-          await writeTextFile(`${dirPath}/filtered_flights_summary.csv`, summaryCsv);
+          if (isWebMode()) {
+            downloadFile('filtered_flights_summary.csv', summaryCsv);
+          } else {
+            const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+            await writeTextFile(`${dirPath}/filtered_flights_summary.csv`, summaryCsv);
+          }
         } catch (err) {
           console.error('Failed to write summary CSV:', err);
         }

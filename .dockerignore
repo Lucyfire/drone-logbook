@@ -1,0 +1,22 @@
+# Dependencies and build outputs
+node_modules/
+src-tauri/target/
+dist/
+
+# Git
+.git/
+.github/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+*.md
+LICENSE
+screenshots/

@@ -4,7 +4,7 @@
 
 <h1 align="center">DJI Flight Log Viewer</h1>
 
-<p align="center">A high-performance desktop application for analyzing DJI drone flight logs. Built with Tauri v2, DuckDB, and React.</p>
+<p align="center">A high-performance application for analyzing DJI drone flight logs. Available as a Tauri v2 desktop app or a Docker-deployable web app. Built with DuckDB and React.</p>
 
 
 <p align="center">
@@ -26,7 +26,7 @@
 ## Features
 
 - **High-Performance Analytics**: DuckDB-powered analytical queries with automatic downsampling for large datasets - import all your flight logs in one place. Free and open source, zero maintanance cost, no monthly subscription for unlimited number of flight log analysis.
-- **Universally available**: The application can be built locally from source, but for ease of use, standalone binaries are provided for Windows and MacOS - ready to deploy. 
+- **Universally available**: The application can be built locally from source, but for ease of use, standalone binaries are provided for Windows and MacOS - ready to deploy. A Docker image is also available for self-hosted web deployment.
 - **Interactive Flight Maps**: MapLibre GL with 3D terrain, satellite toggle, start/end markers, and a deck.gl 3D path overlay - visualize your flight map in 3D interatively. 
 - **Telemetry Charts**: Height/VPS, speed, battery, attitude, RC signal, GPS satellites, RC uplink/downlink, distance-to-home, and velocity X/Y/Z for each of your drone sessions
 - **V13+ Log Support**: Automatic encryption key handling for newer DJI logs
@@ -89,16 +89,54 @@ npm install
 npm run tauri
 ```
 
+## Docker deployment (Self-hosted web version)
+
+The app can also be deployed as a self-hosted web application using Docker. This uses an Axum REST backend instead of Tauri IPC, with Nginx serving the frontend and proxying API requests.
+
+### Using pre-built image from GitHub Container Registry
+
+```bash
+docker pull ghcr.io/arpanghosh8453/dji-logbook:latest
+
+docker run -d \
+  -p 8080:80 \
+  -v dji-data:/data/dji-logviewer \
+  --name dji-logbook \
+  ghcr.io/arpanghosh8453/dji-logbook:latest
+```
+
+Then open http://localhost:8080 in your browser.
+
+### Using docker-compose
+
+```bash
+git clone https://github.com/arpanghosh8453/dji-logbook
+cd dji-logbook
+docker compose up -d
+```
+
+This builds the image locally and starts the container on port 8080 with a persistent volume for your flight data.
+
+### Environment variables
+
+| Variable   | Default                | Description                    |
+|------------|------------------------|--------------------------------|
+| `DATA_DIR` | `/data/dji-logviewer`  | Database and config storage    |
+| `RUST_LOG` | `info`                 | Log level (debug, info, warn)  |
+| `HOST`     | `0.0.0.0`             | Backend bind address           |
+| `PORT`     | `3001`                 | Backend port (internal)        |
+
 ## Configuration
 
 - **DJI API Key**: Stored locally in `config.json`. You can also provide it via `.env` or via the `settings` menu inside the application. The standalone app ships with a default key, but users should enter their own to avoid rate limits for log file decryption key fetching.
-- **Database Location**: Stored in the platform-specific app data directory (e.g., AppData on Windows, Application Support on macOS, and local share on Linux).
-- **Log Files**: App logs are written to the platform-specific log directory and surfaced in Settings.
+- **Database Location**: Stored in the platform-specific app data directory (e.g., AppData on Windows, Application Support on macOS, and local share on Linux). In Docker mode, data is stored in `/data/dji-logviewer` (persisted via a Docker volume).
+- **Log Files**: App logs are written to the platform-specific log directory and surfaced in Settings. In Docker mode, logs are written to stdout.
 
 ## Tech Stack
 
 ### Backend (Rust)
-- **Tauri v2**: Desktop application framework
+- **Tauri v2**: Desktop application framework (feature-gated behind `tauri-app`)
+- **Axum 0.7**: Web REST API server for Docker/web deployment (feature-gated behind `web`)
 - **DuckDB**: Embedded analytical database (bundled, no installation required)
 - **dji-log-parser**: DJI flight log parsing library
 
@@ -111,17 +149,22 @@ npm run tauri
 - **react-map-gl + MapLibre**: Map visualization
 - **deck.gl**: 3D flight path overlay
 
+### Deployment
+- **Docker**: Multi-stage build (Rust → Node → Nginx) with Axum backend + static frontend
+- **GitHub Actions**: Desktop binaries via `tauri-action`, Docker images via GitHub Container Registry
+
 ## Project Structure
 
 ```
 ├── src-tauri/               # RUST BACKEND
 │   ├── src/
-│   │   ├── main.rs          # Entry point (Tauri commands)
+│   │   ├── main.rs          # Entry point (feature-gated: Tauri or Axum)
+│   │   ├── server.rs        # Axum REST API (web feature only)
 │   │   ├── database.rs      # DuckDB connection & schema
 │   │   ├── parser.rs        # dji-log-parser wrapper
 │   │   ├── models.rs        # Data structures
 │   │   └── api.rs           # DJI API key fetching (if present)
-│   ├── Cargo.toml           # Rust dependencies
+│   ├── Cargo.toml           # Rust dependencies + feature flags
 │   └── tauri.conf.json      # App configuration
 │
 ├── src/                     # REACT FRONTEND
@@ -131,11 +174,19 @@ npm run tauri
 │   │   └── map/             # MapLibre components
 │   ├── stores/              # Zustand state
 │   ├── types/               # TypeScript interfaces
-│   └── lib/                 # Utilities
+│   └── lib/
+│       ├── utils.ts         # Utilities
+│       └── api.ts           # Backend adapter (invoke/fetch)
+│
+├── docker/                  # DOCKER CONFIG
+│   ├── nginx.conf           # Nginx reverse proxy config
+│   └── entrypoint.sh        # Container startup script
+│
+├── Dockerfile               # Multi-stage build
+├── docker-compose.yml       # One-command deployment
 │
 └── [App Data Directory]     # RUNTIME DATA
     ├── flights.db           # DuckDB database
-
     └── keychains/           # Cached decryption keys
 ```
 

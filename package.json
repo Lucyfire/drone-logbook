@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "VITE_BACKEND=web vite",
     "build": "tsc && vite build",
+    "build:web": "VITE_BACKEND=web tsc && VITE_BACKEND=web vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:nowatch": "tauri dev --no-watch"

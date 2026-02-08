@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
+const isWebBuild = process.env.VITE_BACKEND === 'web'
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -18,20 +20,35 @@ export default defineConfig({
     watch: {
       ignored: ['**/src-tauri/**', '**/src-tauri/target/**'],
     },
+    // Proxy /api to Axum in web dev mode
+    ...(isWebBuild
+      ? {
+          proxy: {
+            '/api': {
+              target: 'http://localhost:3001',
+              changeOrigin: true,
+            },
+          },
+        }
+      : {}),
   },
-  // Optimize deps for Tauri
+  // Only exclude Tauri deps in Tauri mode; for web builds they're not imported
   optimizeDeps: {
-    exclude: [
-      '@tauri-apps/api',
-      '@tauri-apps/plugin-dialog',
-      '@tauri-apps/plugin-fs',
-      '@tauri-apps/plugin-log',
-      '@tauri-apps/plugin-shell',
-    ],
+    exclude: isWebBuild
+      ? []
+      : [
+          '@tauri-apps/api',
+          '@tauri-apps/plugin-dialog',
+          '@tauri-apps/plugin-fs',
+          '@tauri-apps/plugin-log',
+          '@tauri-apps/plugin-shell',
+        ],
   },
   build: {
-    // Tauri uses Chromium on Windows/Linux and WebKit on macOS
-    target: process.env.TAURI_ENV_PLATFORM === 'windows' 
+    // Web builds target modern browsers; Tauri builds target specific engines
+    target: isWebBuild
+      ? 'es2022'
+      : process.env.TAURI_ENV_PLATFORM === 'windows' 
       ? 'chrome105' 
       : process.env.TAURI_ENV_PLATFORM === 'macos'
       ? 'safari14'

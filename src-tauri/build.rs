@@ -6,7 +6,10 @@ use base64::Engine;
 
 fn main() {
     ensure_default_icon();
-    tauri_build::build()
+
+    // Only run tauri_build when the tauri-app feature is enabled
+    #[cfg(feature = "tauri-app")]
+    tauri_build::build();
 }
 
 fn ensure_default_icon() {

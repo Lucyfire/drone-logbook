@@ -11,17 +11,21 @@ name = "dji_logviewer_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = [], optional = true }
 base64 = "0.22"
 
 [dependencies]
-# Tauri v2 Core
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-shell = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-http = "2"
-tauri-plugin-log = "2"
+# Tauri v2 Core (optional — only for desktop builds)
+tauri = { version = "2", features = ["tray-icon"], optional = true }
+tauri-plugin-shell = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-fs = { version = "2", optional = true }
+tauri-plugin-http = { version = "2", optional = true }
+tauri-plugin-log = { version = "2", optional = true }
+
+# Web server (optional — only for Docker/web builds)
+axum = { version = "0.7", features = ["multipart"], optional = true }
+tower-http = { version = "0.5", features = ["cors", "fs"], optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -42,6 +46,7 @@ anyhow = "1"
 
 # Logging
 log = "0.4"
+env_logger = "0.11"
 
 # Date/Time handling
 chrono = { version = "0.4", features = ["serde"] }
@@ -59,7 +64,18 @@ sha2 = "0.10"
 dirs = "5"
 
 [features]
-default = ["custom-protocol"]
+default = ["tauri-app"]
+tauri-app = [
+    "dep:tauri",
+    "dep:tauri-build",
+    "dep:tauri-plugin-shell",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-fs",
+    "dep:tauri-plugin-http",
+    "dep:tauri-plugin-log",
+    "custom-protocol",
+]
+web = ["dep:axum", "dep:tower-http"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]

@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { invoke } from '@tauri-apps/api/core';
+import * as api from '@/lib/api';
 import type { Flight, FlightDataResponse, ImportResult, OverviewStats } from '@/types';
 
 interface FlightState {
@@ -27,7 +27,7 @@ interface FlightState {
   loadFlights: () => Promise<void>;
   loadOverview: () => Promise<void>;
   selectFlight: (flightId: number) => Promise<void>;
-  importLog: (filePath: string) => Promise<ImportResult>;
+  importLog: (fileOrPath: string | File) => Promise<ImportResult>;
   deleteFlight: (flightId: number) => Promise<void>;
   updateFlightName: (flightId: number, displayName: string) => Promise<void>;
   setUnitSystem: (unitSystem: 'metric' | 'imperial') => void;
@@ -67,7 +67,7 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   loadFlights: async () => {
     set({ isLoading: true, error: null });
     try {
-      const flights = await invoke<Flight[]>('get_flights');
+      const flights = await api.getFlights();
       set({ flights, isLoading: false });
 
       // Auto-select last used flight if available (avoid heavy load on fresh startup)
@@ -102,7 +102,7 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   loadOverview: async () => {
     set({ isLoading: true, error: null });
     try {
-      const stats = await invoke<OverviewStats>('get_overview_stats');
+      const stats = await api.getOverviewStats();
       set({ overviewStats: stats, isLoading: false });
     } catch (err) {
       set({
@@ -134,10 +134,7 @@ export const useFlightStore = create<FlightState>((set, get) => ({
       return;
     }
     try {
-      const flightData = await invoke<FlightDataResponse>('get_flight_data', {
-        flightId,
-        maxPoints: 5000, // Downsample if needed
-      });
+      const flightData = await api.getFlightData(flightId, 5000);
 
       // Store in cache (limit cache size to 10 entries)
       const cache = new Map(get()._flightDataCache);
@@ -166,10 +163,10 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   },
 
   // Import a new log file
-  importLog: async (filePath: string) => {
+  importLog: async (fileOrPath: string | File) => {
     set({ isImporting: true, error: null });
     try {
-      const result = await invoke<ImportResult>('import_log', { filePath });
+      const result = await api.importLog(fileOrPath);
       
       if (result.success && result.flightId) {
         // Reload flights and select the new one
@@ -194,7 +191,7 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   // Delete a flight
   deleteFlight: async (flightId: number) => {
     try {
-      await invoke('delete_flight', { flightId });
+      await api.deleteFlight(flightId);
       
       // Remove from cache
       const cache = new Map(get()._flightDataCache);
@@ -217,7 +214,7 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   // Update flight display name
   updateFlightName: async (flightId: number, displayName: string) => {
     try {
-      await invoke('update_flight_name', { flightId, displayName });
+      await api.updateFlightName(flightId, displayName);
 
       // Update local list
       const flights = get().flights.map((flight) =>

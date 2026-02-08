@@ -1,0 +1,14 @@
+services:
+  dji-logbook:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - dji-data:/data/dji-logviewer
+    environment:
+      - DATA_DIR=/data/dji-logviewer
+      - RUST_LOG=info
+    restart: unless-stopped
+
+volumes:
+  dji-data:

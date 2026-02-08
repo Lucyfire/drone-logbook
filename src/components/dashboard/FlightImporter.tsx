@@ -1,11 +1,12 @@
 /**
  * Flight importer with drag-and-drop support
- * Handles file selection and invokes the Rust import command
+ * Handles file selection and invokes the Rust import command.
+ * Supports both Tauri (native dialog) and web (HTML file input) modes.
  */
 
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { open } from '@tauri-apps/plugin-dialog';
+import { isWebMode, pickFiles } from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
 
 export function FlightImporter() {
@@ -25,37 +26,26 @@ export function FlightImporter() {
     }
   };
 
-  // Handle file selection via dialog
-  const handleBrowse = async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [
-        {
-          name: 'DJI Log Files',
-          extensions: ['txt', 'dat', 'log', 'csv'],
-        },
-      ],
-    });
-
-    const files =
-      typeof selected === 'string'
-        ? [selected]
-        : Array.isArray(selected)
-        ? selected
-        : [];
-
-    if (files.length === 0) return;
+  /** Process a batch of files (File objects for web, path strings for Tauri) */
+  const processBatch = async (items: (string | File)[]) => {
+    if (items.length === 0) return;
 
     setBatchMessage(null);
     setIsBatchProcessing(true);
     let skipped = 0;
     let processed = 0;
 
-    for (let index = 0; index < files.length; index += 1) {
-      const filePath = files[index];
-      const isLast = index === files.length - 1;
-      setCurrentFileName(getShortFileName(filePath));
-      const result = await importLog(filePath);
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const isLast = index === items.length - 1;
+      const name =
+        typeof item === 'string'
+          ? getShortFileName(item)
+          : item.name.length <= 50
+          ? item.name
+          : `${item.name.slice(0, 50)}…`;
+      setCurrentFileName(name);
+      const result = await importLog(item);
       if (!result.success) {
         if (result.message.toLowerCase().includes('already been imported')) {
           skipped += 1;
@@ -84,17 +74,49 @@ export function FlightImporter() {
     }
   };
 
+  // Handle file selection via dialog
+  const handleBrowse = async () => {
+    if (isWebMode()) {
+      // Web mode: use HTML file input
+      const files = await pickFiles('.txt,.dat,.log,.csv', true);
+      await processBatch(files);
+    } else {
+      // Tauri mode: use native dialog
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: 'DJI Log Files',
+            extensions: ['txt', 'dat', 'log', 'csv'],
+          },
+        ],
+      });
+
+      const files =
+        typeof selected === 'string'
+          ? [selected]
+          : Array.isArray(selected)
+          ? selected
+          : [];
+
+      await processBatch(files);
+    }
+  };
+
   // Handle drag and drop
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
       if (acceptedFiles.length > 0) {
-        // For Tauri, we need the file path which isn't directly available
-        // from the File object. The user will need to use the file dialog.
-        // This is a limitation of web-based drag and drop in Tauri.
-        alert(
-          'Please use the "Browse" button to select files. ' +
-            'Drag and drop file paths are not accessible in Tauri apps.'
-        );
+        if (isWebMode()) {
+          // Web mode: File objects are directly usable
+          await processBatch(acceptedFiles);
+        } else {
+          alert(
+            'Please use the "Browse" button to select files. ' +
+              'Drag and drop file paths are not accessible in Tauri apps.'
+          );
+        }
       }
     },
     [importLog]

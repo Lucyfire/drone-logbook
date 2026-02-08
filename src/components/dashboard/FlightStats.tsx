@@ -4,8 +4,7 @@
  */
 
 import type { FlightDataResponse } from '@/types';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { isWebMode, downloadFile } from '@/lib/api';
 import { useMemo, useState } from 'react';
 import {
   formatDuration,
@@ -201,11 +200,6 @@ ${points}
         .replace(/_+/g, '_')
         .replace(/^_+|_+$/g, '')
         .slice(0, 80);
-      const filePath = await save({
-        defaultPath: `${baseName || 'flight'}.${extension}`,
-        filters: [{ name: format.toUpperCase(), extensions: [extension] }],
-      });
-      if (!filePath) return;
 
       let content = '';
       switch (format) {
@@ -225,7 +219,20 @@ ${points}
           return;
       }
 
-      await writeTextFile(filePath, content);
+      const filename = `${baseName || 'flight'}.${extension}`;
+
+      if (isWebMode()) {
+        downloadFile(filename, content);
+      } else {
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+        const filePath = await save({
+          defaultPath: filename,
+          filters: [{ name: format.toUpperCase(), extensions: [extension] }],
+        });
+        if (!filePath) return;
+        await writeTextFile(filePath, content);
+      }
     } catch (error) {
       console.error('Export failed:', error);
     } finally {

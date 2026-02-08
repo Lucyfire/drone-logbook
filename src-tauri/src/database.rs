@@ -24,12 +24,6 @@ pub enum DatabaseError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Failed to get app data directory")]
-    AppDataDirNotFound,
-
-    #[error("Database not initialized")]
-    NotInitialized,
-
     #[error("Flight not found: {0}")]
     FlightNotFound(i64),
 }
@@ -327,11 +321,6 @@ impl Database {
         ))?;
 
         Ok(())
-    }
-
-    /// Get the path to the keychains directory
-    pub fn keychains_dir(&self) -> PathBuf {
-        self.data_dir.join("keychains")
     }
 
     /// Generate a new unique flight ID using timestamp + random
@@ -754,62 +743,6 @@ impl Database {
         Ok(records)
     }
 
-    /// Get GPS track data optimized for map visualization
-    pub fn get_flight_track(
-        &self,
-        flight_id: i64,
-        max_points: Option<usize>,
-        known_point_count: Option<i64>,
-    ) -> Result<Vec<[f64; 3]>, DatabaseError> {
-        let conn = self.conn.lock().unwrap();
-        let max_points = max_points.unwrap_or(2000);
-
-        // Use known count or fall back to a COUNT query
-        let point_count = match known_point_count {
-            Some(c) if c > 0 => c as usize,
-            _ => {
-                let c: i64 = conn.query_row(
-                    "SELECT COUNT(*) FROM telemetry WHERE flight_id = ?",
-                    params![flight_id],
-                    |row| row.get(0),
-                )?;
-                c as usize
-            }
-        };
-
-        // Calculate skip factor for downsampling
-        let skip_factor = (point_count / max_points).max(1);
-
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT longitude, latitude, altitude_value
-            FROM (
-                SELECT 
-                    longitude, 
-                    latitude,
-                    COALESCE(height, vps_height, altitude) AS altitude_value,
-                    ROW_NUMBER() OVER (ORDER BY timestamp_ms) AS rn
-                FROM telemetry
-                WHERE flight_id = ? 
-                  AND latitude IS NOT NULL 
-                  AND longitude IS NOT NULL
-                  AND NOT (ABS(latitude) < 0.000001 AND ABS(longitude) < 0.000001)
-            )
-            WHERE rn % ? = 0
-            ORDER BY rn
-            "#,
-        )?;
-
-        let track = stmt
-            .query_map(params![flight_id, skip_factor as i64], |row| {
-                Ok([row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, f64>(2)?])
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        Ok(track)
-    }
-
     /// Delete a flight and all associated telemetry data
     pub fn delete_flight(&self, flight_id: i64) -> Result<(), DatabaseError> {
         let start = std::time::Instant::now();
@@ -1080,41 +1013,6 @@ impl Database {
         )?;
 
         Ok(count > 0)
-    }
-
-    /// Store an encryption key for a drone serial number
-    pub fn store_keychain(&self, serial: &str, key: &str) -> Result<(), DatabaseError> {
-        let conn = self.conn.lock().unwrap();
-
-        conn.execute(
-            r#"
-            INSERT INTO keychains (serial_number, encryption_key)
-            VALUES (?, ?)
-            ON CONFLICT (serial_number) DO UPDATE SET 
-                encryption_key = excluded.encryption_key,
-                fetched_at = CURRENT_TIMESTAMP
-            "#,
-            params![serial, key],
-        )?;
-
-        Ok(())
-    }
-
-    /// Retrieve a cached encryption key
-    pub fn get_keychain(&self, serial: &str) -> Result<Option<String>, DatabaseError> {
-        let conn = self.conn.lock().unwrap();
-
-        let result = conn.query_row(
-            "SELECT encryption_key FROM keychains WHERE serial_number = ?",
-            params![serial],
-            |row| row.get::<_, String>(0),
-        );
-
-        match result {
-            Ok(key) => Ok(Some(key)),
-            Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
     }
 }
 

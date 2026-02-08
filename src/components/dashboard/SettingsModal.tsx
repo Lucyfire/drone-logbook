@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import * as api from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
 
 interface SettingsModalProps {
@@ -59,7 +59,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const checkApiKey = async () => {
     try {
-      const exists = await invoke<boolean>('has_api_key');
+      const exists = await api.hasApiKey();
       setHasKey(exists);
     } catch (err) {
       console.error('Failed to check API key:', err);
@@ -68,7 +68,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const getAppDataDir = async () => {
     try {
-      const dir = await invoke<string>('get_app_data_dir');
+      const dir = await api.getAppDataDir();
       setAppDataDir(dir);
     } catch (err) {
       console.error('Failed to get app data dir:', err);
@@ -77,7 +77,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const getAppLogDir = async () => {
     try {
-      const dir = await invoke<string>('get_app_log_dir');
+      const dir = await api.getAppLogDir();
       setAppLogDir(dir);
     } catch (err) {
       console.error('Failed to get app log dir:', err);
@@ -94,7 +94,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setMessage(null);
 
     try {
-      await invoke('set_api_key', { apiKey: apiKey.trim() });
+      await api.setApiKey(apiKey.trim());
       setMessage({ type: 'success', text: 'API key saved successfully!' });
       setHasKey(true);
       setApiKey(''); // Clear the input for security
@@ -107,7 +107,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleDeleteAll = async () => {
     try {
-      await invoke('delete_all_flights');
+      await api.deleteAllFlights();
       clearSelection();
       await loadFlights();
       await loadOverview();

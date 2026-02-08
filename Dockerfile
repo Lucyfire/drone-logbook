@@ -1,11 +1,102 @@
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
-COPY . .
-RUN npm run build
+# =============================================================================
+# DJI Logbook — Docker multi-stage build
+#
+# Stage 1: Build Rust backend (Axum web server)
+# Stage 2: Build React frontend (Vite)
+# Stage 3: Runtime — Nginx + Axum in a single container
+# =============================================================================
 
-FROM nginx:1.25-alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
+# ---------------------------------------------------------------------------
+# Stage 1: Rust backend build
+# ---------------------------------------------------------------------------
+FROM rust:1.82-bookworm AS backend-builder
+
+# Install system deps for DuckDB bundled build
+RUN apt-get update && apt-get install -y \
+    cmake \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy only Cargo manifests first for layer caching
+COPY src-tauri/Cargo.toml src-tauri/Cargo.lock* ./src-tauri/
+COPY src-tauri/build.rs ./src-tauri/
+
+# Create dummy source files to cache dependency builds
+RUN mkdir -p src-tauri/src && \
+    echo 'fn main() {}' > src-tauri/src/main.rs && \
+    echo '' > src-tauri/src/lib.rs && \
+    echo '' > src-tauri/src/api.rs && \
+    echo '' > src-tauri/src/database.rs && \
+    echo '' > src-tauri/src/models.rs && \
+    echo '' > src-tauri/src/parser.rs && \
+    echo '' > src-tauri/src/server.rs
+
+# Build dependencies only (cached layer)
+WORKDIR /build/src-tauri
+RUN cargo build --release --features web --no-default-features 2>/dev/null || true
+
+# Copy actual source code
+COPY src-tauri/src/ ./src/
+COPY src-tauri/icons/ ./icons/
+
+# Rebuild with real source
+RUN touch src/main.rs src/lib.rs && \
+    cargo build --release --features web --no-default-features
+
+# ---------------------------------------------------------------------------
+# Stage 2: Frontend build
+# ---------------------------------------------------------------------------
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /build
+
+# Copy package files for layer caching
+COPY package.json package-lock.json* ./
+
+RUN npm ci
+
+# Copy frontend source
+COPY index.html tsconfig.json tsconfig.node.json vite.config.ts postcss.config.js tailwind.config.js ./
+COPY src/ ./src/
+
+# Build with web backend mode
+ENV VITE_BACKEND=web
+RUN npx vite build
+
+# ---------------------------------------------------------------------------
+# Stage 3: Runtime
+# ---------------------------------------------------------------------------
+FROM nginx:stable-bookworm AS runtime
+
+# Copy backend binary
+COPY --from=backend-builder /build/src-tauri/target/release/dji-logviewer /app/dji-logviewer
+
+# Copy frontend build
+COPY --from=frontend-builder /build/dist /usr/share/nginx/html
+
+# Copy nginx config
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy entrypoint
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Create data directory
+RUN mkdir -p /data/dji-logviewer
+
+# Environment variables
+ENV DATA_DIR=/data/dji-logviewer
+ENV PORT=3001
+ENV HOST=127.0.0.1
+ENV RUST_LOG=info
+
+# Expose HTTP port
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+
+# Persistent data volume
+VOLUME ["/data/dji-logviewer"]
+
+ENTRYPOINT ["/app/entrypoint.sh"]

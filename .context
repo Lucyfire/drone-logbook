@@ -1,9 +1,10 @@
 {
   "project": {
     "name": "DJI Log Viewer",
-    "goal": "Local-first DJI flight log viewer with charts, maps, and analytics.",
+    "goal": "Local-first DJI flight log viewer with charts, maps, and analytics. Available as a Tauri v2 desktop app or a Docker-deployable web app.",
     "stack": {
-      "desktop": "Tauri v2",
+      "desktop": "Tauri v2 (feature: tauri-app)",
+      "web": "Axum 0.7 + Nginx (feature: web)",
       "frontend": "React 18 + TypeScript + Vite + Tailwind",
       "state": "Zustand",
       "charts": "ECharts (echarts-for-react)",
@@ -14,7 +15,7 @@
     "os": "Linux",
     "runtime": {
       "node": "18.x",
-      "rust": "stable",
+      "rust": "stable (1.70+)",
       "tauri_cli": "2.x"
     }
   },
@@ -44,7 +45,33 @@
     "backend": {
       "duckdb_rs": "bundled",
       "dji_log_parser": "0.5.7",
+      "axum": "0.7 (web feature, with multipart)",
+      "tower_http": "0.5 (web feature, with cors + fs)",
+      "env_logger": "0.11",
       "tempfile": "3 (dev-dependency for tests)"
+    }
+  },
+  "build_modes": {
+    "tauri_app": {
+      "description": "Desktop app with Tauri v2 IPC (default feature)",
+      "cargo_features": "tauri-app (default)",
+      "frontend_env": "VITE_BACKEND unset or != 'web'",
+      "commands": {
+        "dev": "npm run tauri",
+        "build": "npm run tauri build"
+      }
+    },
+    "web": {
+      "description": "REST API server with Axum for Docker/web deployment",
+      "cargo_features": "web (--no-default-features --features web)",
+      "frontend_env": "VITE_BACKEND=web",
+      "commands": {
+        "dev_frontend": "npm run dev:web",
+        "dev_backend": "cargo run --features web --no-default-features",
+        "build_frontend": "npm run build:web",
+        "build_backend": "cargo build --release --features web --no-default-features",
+        "docker": "docker compose up --build"
+      }
     }
   },
   "scope": {
@@ -60,20 +87,22 @@
       "Settings: API key, units (metric/imperial), theme (light/dark/system), delete-all logs.",
       "Settings: shows app data + log directory for troubleshooting.",
       "Charts: height/VPS/speed (metric in km/h), battery, attitude, RC signal, GPS satellites.",
-      "Charts: RC uplink/downlink, distance-to-home, velocity X/Y/Z.",
+      "Charts: RC uplink/downlink, distance-to-home, and velocity XYZ panels.",
       "Charts: synchronized zoom, reset zoom, auto-scaled Y axes, aligned X-axis ticks, custom tooltip header with pills.",
       "Map: 3D terrain view via MapLibre, global theme styling.",
       "Map: satellite style toggle, gradient flight path with start/end markers.",
       "Map: deck.gl 3D path overlay; map toggles persist in session.",
+      "Map: Catmull-Rom spline smoothing, color-by modes (progress/height/speed/distance), hover tooltip.",
       "Export: CSV/JSON/GPX/KML downloads from flight stats.",
-      "Logging: comprehensive debug logging via tauri-plugin-log (console + file) at Debug level. Parser logs file details, frame processing stats, skip reasons, and timing. Commands log elapsed time. Queries log row counts and timing.",
+      "Logging: comprehensive debug logging via tauri-plugin-log (desktop) or env_logger (web).",
       "Crash protection: parser uses spawn_blocking + catch_unwind + timeout. Telemetry validated for GPS range, finite values, altitude/speed sanity.",
       "UI polish: theme variables, tag styling for device/serials, modal scrollbar lock.",
-      "Data safety: DB backup, corruption handling, telemetry rebuild when column order mismatches."
+      "Data safety: DB backup, corruption handling, telemetry rebuild when column order mismatches.",
+      "Docker/Web deployment: Axum REST API mirroring all Tauri commands, Nginx reverse proxy, multi-stage Docker build.",
+      "Dual-mode frontend: api.ts adapter uses invoke() for Tauri, fetch() for web. All @tauri-apps imports are dynamic."
     ],
     "out_of_scope": [
       "Cloud sync",
-      "Server-side processing",
       "External analytics pipelines"
     ]
   },
@@ -84,6 +113,7 @@
         "src/components/dashboard/Dashboard.tsx",
         "src/components/dashboard/FlightList.tsx",
         "src/components/dashboard/FlightStats.tsx",
+        "src/components/dashboard/FlightImporter.tsx",
         "src/components/dashboard/SettingsModal.tsx",
         "src/components/dashboard/Overview.tsx",
         "src/components/charts/TelemetryCharts.tsx",
@@ -94,17 +124,31 @@
         "tailwind.config.js"
       ],
       "state_store": "src/stores/flightStore.ts",
-      "types": "src/types/index.ts"
+      "api_adapter": "src/lib/api.ts",
+      "types": "src/types/index.ts",
+      "env_types": "src/vite-env.d.ts"
     },
     "backend": {
       "root": "src-tauri/src",
       "key_files": [
         "src-tauri/src/main.rs",
+        "src-tauri/src/server.rs",
         "src-tauri/src/database.rs",
         "src-tauri/src/parser.rs",
         "src-tauri/src/models.rs",
-        "src-tauri/src/api.rs"
+        "src-tauri/src/api.rs",
+        "src-tauri/src/lib.rs"
       ]
+    },
+    "docker": {
+      "dockerfile": "Dockerfile",
+      "compose": "docker-compose.yml",
+      "nginx_conf": "docker/nginx.conf",
+      "entrypoint": "docker/entrypoint.sh"
+    },
+    "ci": {
+      "tauri_build": ".github/workflows/build.yml",
+      "docker_build": ".github/workflows/docker.yml"
     },
     "config": {
       "env": ".env (DJI API key via env var)",
@@ -113,99 +157,48 @@
     }
   },
   "data_flow": {
-    "import": [
-      "User selects file(s) in UI",
+    "import_tauri": [
+      "User selects file(s) via native dialog",
       "Tauri command parses using dji-log-parser (spawn_blocking + catch_unwind + 40s timeout)",
-      "Parser validates telemetry: skips corrupt frames, filters GPS (lat ±90, lon ±180), clamps altitude (<10km) and speed (<100 m/s)",
+      "Parser validates telemetry: skips corrupt frames, filters GPS (lat +/-90, lon +/-180), clamps altitude (<10km) and speed (<100 m/s)",
       "Metadata inserted into flights table",
       "Telemetry bulk inserted with DuckDB Appender (column order enforced)",
       "If telemetry insert fails, flight metadata is cleaned up automatically",
       "UI refreshes flight list and telemetry views"
     ],
+    "import_web": [
+      "User selects file(s) via HTML file input or drag-and-drop",
+      "File uploaded via multipart/form-data to POST /api/import",
+      "Axum handler writes to temp file, parser processes identically to Tauri mode",
+      "Temp file cleaned up after parsing",
+      "JSON response returned with ImportResult"
+    ],
     "telemetry_query": [
       "UI requests telemetry for flight via selectFlight()",
       "Store checks if same flight already selected (skip if so)",
       "Store checks _flightDataCache Map (LRU, max 10 entries) for instant hit",
-      "On cache miss: Tauri get_flight_data uses get_flight_by_id() for O(1) lookup",
-      "Telemetry/track queries skip COUNT(*) when point_count known from flight metadata",
+      "On cache miss: api.getFlightData() routes to invoke() or fetch() based on mode",
+      "Backend uses get_flight_by_id() for O(1) lookup",
+      "Telemetry queries skip COUNT(*) when point_count known from flight metadata",
       "DB returns raw data or downsampled to ~5000 points (1s buckets)",
       "Response cached in frontend store for future re-selection",
       "Frontend converts units and renders charts/maps"
     ]
   },
   "recent_changes": {
-    "filters": {
-      "flight_list": "Added date range popup, drone and battery filters with compact styling.",
-      "date_picker": "Modern range picker (react-day-picker), future dates disabled, themed styling."
+    "docker_web_mode": {
+      "description": "Added Docker/web deployment mode using Cargo feature flags.",
+      "server": "src-tauri/src/server.rs - Axum REST API with all 11 endpoints mirroring Tauri commands.",
+      "api_adapter": "src/lib/api.ts - unified interface: invoke() for Tauri, fetch() for web. Lazy-loads @tauri-apps imports.",
+      "feature_flags": "Cargo.toml: tauri-app (default) and web features. All Tauri deps are optional.",
+      "main_rs": "Feature-gated: mod tauri_app for desktop, run_web() for Axum server.",
+      "frontend_components": "FlightImporter, FlightList, FlightStats, SettingsModal updated with isWebMode() guards and dynamic imports.",
+      "vite_config": "Web mode: /api proxy, conditional optimizeDeps, es2022 build target.",
+      "docker": "Multi-stage Dockerfile (rust:1.82 -> node:20 -> nginx:stable), docker-compose.yml, nginx.conf, entrypoint.sh.",
+      "npm_scripts": "Added dev:web and build:web scripts with VITE_BACKEND=web."
     },
-    "flight_list": {
-      "search_sort": "Search by partial title and sort by date/name with direction toggle.",
-      "simplified_layout": "Replaced complex flight entries (hover effects, group transitions, icon rows) with a simple compact list. Each entry shows flight name, small inline rename (sky-400) and delete (red-400) icons, and a single subtitle line with date, duration, and distance separated by dots. Double-click on name also triggers rename. All functionality preserved (rename with Save/Cancel, delete with Yes/No confirmation, selection highlight, keyboard access).",
-      "removed_icons": "Removed ClockIcon and DistanceIcon components (stats are now inline text).",
-      "flex_height_fix": "Changed FlightList root from h-full to flex-1 min-h-0, and Dashboard wrapper to flex-1 min-h-0 flex flex-col, fixing height resolution chain that caused double text rendering."
-    },
-    "ui": {
-      "selects": "Custom select styling to match dark/light themes, consistent background and text.",
-      "collapsed_sidebar": "Collapsed width increased by ~20%.",
-      "overview_filters": "Sticky filter bar on overview; content scrolls independently.",
-      "overview_sidebar": "Flight list remains visible in overview; controls hidden.",
-      "labels": "Device/SN/Battery tags stylized as pills.",
-      "charts": "Light theme gridlines, auto axis ranges with rounding, right padding to avoid label clipping, RC ticks fixed (0/50/100).",
-      "battery_chart": "Low battery region shown as semi-transparent red band; voltage plotted on hidden axis, temp labeled on right.",
-      "gps_chart": "Height increased to 200px.",
-      "delete_confirm": "Inline confirmations for single-flight delete and delete-all logs in Settings.",
-      "loading_spinner": "Changed loading spinner from border-dji-primary to border-sky-400 (light blue) for visibility in both light and dark modes."
-    },
-    "exports": {
-      "flight_stats": "Export dropdown for CSV/JSON/GPX/KML with derived distance-to-home in JSON/CSV."
-    },
-    "charts": {
-      "telemetry": "Added RC uplink/downlink, distance-to-home, and velocity XYZ panels.",
-      "theme_aware": "Chart base config is now theme-aware (createBaseChartConfig). Axis colors, label colors, tooltip bg/border/text, data zoom styling, and data background all adapt to light/dark mode."
-    },
-    "map": {
-      "smoothing": "Raw GPS track smoothed with Catmull-Rom spline interpolation (resolution=4) for natural curves.",
-      "path": "deck.gl PathLayer with per-segment gradient coloring, 4px width, shadow/outline layer (7px, black 40% opacity). Path data includes meta per segment (height, speed, distance, progress, lat, lng).",
-      "color_by": "Dropdown with 4 modes: Progress (yellow→red), Height (green→yellow→red), Speed (blue→cyan→green→yellow→red), Distance from Home (green→yellow→orange→red). Multi-stop ramps with lerp interpolation.",
-      "markers": "Start (pulsing yellow dot + label), End (red circle with landing arrow + label), Home (blue 'H' circle). All use react-map-gl Marker components.",
-      "tooltip": "Hover tooltip shows Height (m), Speed (km/h), Dist. Home (m/km), Lat, Lng. Toggleable via controls panel (default on, session-persisted). Uses manual deck.pickObject() on parent div mousemove with pickingRadius=12 — DeckGL overlay keeps pointer-events:none so map pan/rotate/zoom remain fully interactive.",
-      "toggles": "3D Terrain, Satellite, Tooltip — all session-persisted via sessionStorage.",
-      "styles": "Satellite basemap (ArcGIS tiles), dark/light Carto basemaps, 3D terrain (MapLibre DEM)."
-    },
-    "logging": {
-      "tauri": "tauri-plugin-log enabled at LevelFilter::Debug; console + log file targets.",
-      "log_dir": "~/.local/share/com.dji-logviewer.app/logs/",
-      "parser_logging": "File size/hash, version/product/serial info, frame counts, per-frame skip reasons (corrupt, no-GPS, out-of-range, alt/speed clamped), parse completion summary with timing.",
-      "command_logging": "All Tauri command handlers log timing (elapsed ms), parameters, and result counts.",
-      "database_logging": "Query timing for get_all_flights, get_overview_stats, delete_flight, delete_all_flights, update_flight_name.",
-      "error_logging": "Timeout/panic errors in parser logged with details; keychain fetch failures; telemetry insert cleanup."
-    },
-    "raw_logs_removed": {
-      "description": "Removed raw_logs feature that copied encrypted binary .txt files to app data dir (served no purpose). Removed archive_log_file from parser, get_raw_logs_dir command, raw_logs dir creation, and all references."
-    },
-    "crash_protection": {
-      "parser": "DJILog::from_bytes and frames() run in spawn_blocking with catch_unwind and 40s timeout. Panics are caught and returned as ParserError::Panic.",
-      "telemetry_validation": "extract_telemetry skips frames with non-finite values, GPS outside ±90/±180, altitude >10km, speed >100 m/s. Counters track skip reasons.",
-      "frontend": "selectFlight wrapped in try/catch; localStorage cleared on repeated crash to break crash loops."
-    },
-    "startup": {
-      "selection": "Last selected flight is persisted; no auto-load on fresh start unless a last selection exists.",
-      "logging": "UI renders without waiting for log plugin initialization."
-    },
-    "api_key": {
-      "cache": "API key cache updates immediately after saving (no restart needed).",
-      "default": "Default key is used when no key is configured; users can override in Settings."
-    },
-    "light_mode": {
-      "text_overrides": "Light mode overrides for text-gray-300/400/500/100/white and border-gray-700 use !important in index.css.",
-      "hover_overrides": "Light mode hover overrides for hover:bg-gray-700/30, hover:bg-gray-700/40, hover:bg-gray-700, hover:text-white, hover:text-gray-200.",
-      "scrollbar": "Light mode scrollbar styling (track #f1f5f9, thumb #cbd5e1) plus scrollbar-color on body.theme-light."
-    },
-    "performance": {
-      "get_flight_by_id": "Added get_flight_by_id() to database.rs for single-row WHERE id=? lookup, replacing get_all_flights() scan in get_flight_data.",
-      "skip_count_queries": "get_flight_telemetry() and get_flight_track() now accept optional known_point_count parameter from flight metadata, skipping redundant SELECT COUNT(*) queries.",
-      "frontend_cache": "Zustand store caches up to 10 flight data responses in _flightDataCache Map. Re-selecting a previously viewed flight serves data instantly from memory.",
-      "skip_same_flight": "selectFlight() returns immediately if the requested flight is already selected and data is loaded."
+    "dead_code_cleanup": {
+      "description": "Removed unused DatabaseError variants (AppDataDirNotFound, NotInitialized) and methods (keychains_dir, get_flight_track, store_keychain, get_keychain) to eliminate compiler warnings."
     }
   },
   "behavior": {
@@ -255,7 +248,7 @@
     }
   },
   "database": {
-    "path": "~/.local/share/com.dji-logviewer.app/flights.db",
+    "path": "~/.local/share/com.dji-logviewer.app/flights.db (desktop) or /data/dji-logviewer/flights.db (Docker)",
     "tables": {
       "flights": [
         "id",
@@ -319,8 +312,24 @@
       "Bulk inserts use DuckDB Appender matching the exact column order above.",
       "Downsampling occurs when telemetry points exceed ~5000 (1s buckets).",
       "Map track altitude uses COALESCE(height, vps_height, altitude) for relative 3D paths.",
-      "App data dir structure: flights.db + keychains/ (no raw_logs — removed).",
+      "App data dir structure: flights.db + keychains/.",
       "Failed telemetry inserts trigger automatic flight metadata cleanup."
+    ]
+  },
+  "api_endpoints": {
+    "note": "Web mode only (Axum server). All endpoints mirror Tauri commands.",
+    "routes": [
+      "POST   /api/import            - Upload flight log (multipart)",
+      "GET    /api/flights            - List all flights",
+      "GET    /api/flight_data        - Get telemetry (query: flight_id, max_points)",
+      "GET    /api/overview           - Overview statistics",
+      "DELETE /api/flights/delete     - Delete flight (query: flight_id)",
+      "DELETE /api/flights/delete_all - Delete all flights",
+      "PUT    /api/flights/name       - Rename flight (JSON: flight_id, display_name)",
+      "GET    /api/has_api_key        - Check API key configured",
+      "POST   /api/set_api_key        - Set API key (JSON: api_key)",
+      "GET    /api/app_data_dir       - Data directory path",
+      "GET    /api/app_log_dir        - Log directory path"
     ]
   },
   "parser": {
@@ -335,7 +344,7 @@
       "Altitude fallback uses altitude if height is missing.",
       "Display name defaults to filename; can be edited in UI.",
       "Corrupt frames (non-finite lat/lon/alt/speed) are skipped with logging.",
-      "GPS coordinates outside ±90 lat / ±180 lon are treated as out-of-range and excluded.",
+      "GPS coordinates outside +/-90 lat / +/-180 lon are treated as out-of-range and excluded.",
       "Altitude/height values >10km and speed >100 m/s are clamped to None.",
       "V13+ logs require keychain decryption; API key fetched from config or default.",
       "File deduplication via SHA256 hash prevents re-importing the same log.",
@@ -344,36 +353,56 @@
   },
   "commands": {
     "frontend": [
-      "npm run dev",
-      "npm run build",
+      "npm run dev            - Tauri frontend dev server",
+      "npm run dev:web        - Web mode dev server (with /api proxy)",
+      "npm run build          - Tauri frontend build",
+      "npm run build:web      - Web mode frontend build",
       "npm run preview"
     ],
     "tauri": [
-      "npm run tauri",
-      "npm run tauri:nowatch"
+      "npm run tauri          - Full Tauri dev mode",
+      "npm run tauri:nowatch  - Tauri dev without file watching"
+    ],
+    "docker": [
+      "docker compose up -d           - Run with docker-compose",
+      "docker compose up --build -d   - Rebuild and run"
     ]
   },
+  "ci_cd": {
+    "build_yml": {
+      "trigger": "on release published",
+      "platforms": ["ubuntu-latest", "windows-latest", "macos-latest"],
+      "action": "tauri-apps/tauri-action@v0",
+      "artifacts": "Desktop binaries uploaded to GitHub Release"
+    },
+    "docker_yml": {
+      "trigger": "on release published + manual dispatch",
+      "registry": "ghcr.io",
+      "image": "ghcr.io/arpanghosh8453/dji-logbook",
+      "tags": "latest + version tag from release"
+    }
+  },
   "ui": {
-    "themes": "CSS variables in src/index.css; body classes theme-light/theme-dark. Light mode uses !important overrides for text colors, hover backgrounds, and scrollbar styling.",
+    "themes": "CSS variables in src/index.css; body classes theme-light/theme-dark. Light mode uses !important overrides.",
     "filters": "Flight list uses date range popover (react-day-picker), drone and battery selects.",
-    "flight_list": "Simple compact list with always-visible rename (sky-400) and delete (red-400) icons. Subtitle shows date · duration · distance. Double-click name to rename. No hover effects or transitions.",
-    "charts": "ECharts with synced zoom; reset zoom button; map + charts resizable panels; tooltip header uses pill capsules for duration/time; attitude panel taller; RC ticks fixed to 0/50/100. Theme-aware base config adapts all visual elements to light/dark mode.",
-    "map": "MapLibre terrain with global theme styling. deck.gl overlay with spline-smoothed color-by gradient path, shadow layer, start/end/home markers, hover tooltip (manual picking, pointer-events passthrough).",
+    "flight_list": "Simple compact list with always-visible rename (sky-400) and delete (red-400) icons. Subtitle shows date . duration . distance.",
+    "charts": "ECharts with synced zoom; reset zoom button; tooltip header uses pill capsules. Theme-aware base config.",
+    "map": "MapLibre terrain with deck.gl overlay. Spline-smoothed color-by gradient path, shadow layer, start/end/home markers, hover tooltip.",
     "loading": "Spinner uses border-sky-400 for both-mode visibility."
   },
   "known_issues": [
     "If import fails with column order mismatch, telemetry table rebuild should correct it.",
     "Node engine warnings may appear for some transient packages; app still runs.",
-    "Older DJI logs (pre-2020) may produce garbage telemetry values; parser validation filters these out."
+    "Older DJI logs (pre-2020) may produce garbage telemetry values; parser validation filters these out.",
+    "macOS binaries are unsigned (no Apple Developer account); users need xattr -d com.apple.quarantine workaround."
   ],
   "notes": {
     "api_key": "Stored locally in config.json; never sent except to DJI API.",
-    "db_location": "App data dir under ~/.local/share/com.dji-logviewer.app (flights.db + keychains/)",
-    "log_location": "Log files under ~/.local/share/com.dji-logviewer.app/logs/",
-    "checkpoint": "git tag checkpoint-2026-02-08",
+    "db_location_desktop": "App data dir under ~/.local/share/com.dji-logviewer.app (flights.db + keychains/)",
+    "db_location_docker": "/data/dji-logviewer (persistent volume)",
+    "log_location": "Log files under ~/.local/share/com.dji-logviewer.app/logs/ (desktop) or stdout (Docker)",
     "git": {
-      "branch": "master",
-      "tags": ["checkpoint-2026-02-06", "checkpoint-2026-02-08"]
+      "branch": "master"
     }
   }
 }
