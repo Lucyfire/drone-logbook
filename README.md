@@ -69,8 +69,8 @@ There is no installation step if you want to use the standalone binary builds, j
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/dji-logviewer.git
-cd dji-logviewer
+git clone https://github.com/arpanghosh8453/dji-logbook
+cd dji-logbook
 
 # Install frontend dependencies
 npm install
