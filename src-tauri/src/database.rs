@@ -714,8 +714,8 @@ impl Database {
                     AVG(pitch) AS pitch,
                     AVG(roll) AS roll,
                     AVG(yaw) AS yaw,
-                    MODE(satellites) AS satellites,
-                    MODE(flight_mode) AS flight_mode,
+                    ROUND(AVG(satellites))::INTEGER AS satellites,
+                    FIRST(flight_mode ORDER BY timestamp_ms) AS flight_mode,
                     AVG(rc_signal)::INTEGER AS rc_signal,
                     AVG(rc_uplink)::INTEGER AS rc_uplink,
                     AVG(rc_downlink)::INTEGER AS rc_downlink
@@ -859,31 +859,6 @@ impl Database {
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
             )?;
-
-        // Calculate max distance from home using haversine formula in SQL
-        // This gives us the max straight-line distance from home point for each flight
-        let max_distance_from_home: f64 = conn.query_row(
-            r#"
-            SELECT COALESCE(MAX(
-                CASE WHEN home_lat IS NOT NULL AND home_lon IS NOT NULL 
-                     AND t.latitude IS NOT NULL AND t.longitude IS NOT NULL
-                THEN 
-                    6371000 * 2 * ASIN(SQRT(
-                        POWER(SIN(RADIANS(t.latitude - f.home_lat) / 2), 2) +
-                        COS(RADIANS(f.home_lat)) * COS(RADIANS(t.latitude)) *
-                        POWER(SIN(RADIANS(t.longitude - f.home_lon) / 2), 2)
-                    ))
-                ELSE 0 END
-            ), 0)::DOUBLE
-            FROM flights f
-            LEFT JOIN telemetry t ON f.id = t.flight_id
-            WHERE f.home_lat IS NOT NULL AND f.home_lon IS NOT NULL
-              AND NOT (ABS(f.home_lat) < 0.000001 AND ABS(f.home_lon) < 0.000001)
-              AND NOT (ABS(t.latitude) < 0.000001 AND ABS(t.longitude) < 0.000001)
-            "#,
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0.0);
 
         // Battery usage with total duration
         let mut stmt = conn.prepare(
@@ -1054,6 +1029,12 @@ impl Database {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
+
+        // Derive global max distance from the per-flight results (no extra query needed)
+        let max_distance_from_home = top_distance_flights
+            .first()
+            .map(|f| f.max_distance_from_home_m)
+            .unwrap_or(0.0);
 
         Ok(OverviewStats {
             total_flights,

@@ -169,14 +169,12 @@ async fn get_flight_data(
             _ => format!("Failed to get telemetry: {}", e),
         })?;
 
-    // Convert to ECharts-optimized format
+    // Convert to ECharts-optimized format (single pass)
     let telemetry = TelemetryData::from_records(&telemetry_records);
 
-    // Get GPS track for map
-    let track = state
-        .db
-        .get_flight_track(flight_id, Some(2000), known_point_count)
-        .map_err(|e| format!("Failed to get track: {}", e))?;
+    // Extract GPS track directly from telemetry data in memory
+    // This avoids a second database query entirely
+    let track = telemetry.extract_track(2000);
 
     Ok(FlightDataResponse {
         flight,

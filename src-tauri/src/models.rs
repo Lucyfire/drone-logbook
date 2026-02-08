@@ -255,34 +255,111 @@ pub struct TelemetryData {
 
 impl TelemetryData {
     /// Create TelemetryData from a vector of TelemetryRecords
+    ///
+    /// Uses a single pass over the records to build all column vectors
+    /// simultaneously, avoiding 20 separate iterator traversals.
     pub fn from_records(records: &[TelemetryRecord]) -> Self {
+        let n = records.len();
         let base_time = records.first().map(|r| r.timestamp_ms).unwrap_or(0);
 
-        Self {
-            time: records
-                .iter()
-                .map(|r| (r.timestamp_ms - base_time) as f64 / 1000.0)
-                .collect(),
-            latitude: records.iter().map(|r| r.latitude).collect(),
-            longitude: records.iter().map(|r| r.longitude).collect(),
-            altitude: records.iter().map(|r| r.altitude).collect(),
-            height: records.iter().map(|r| r.height).collect(),
-            vps_height: records.iter().map(|r| r.vps_height).collect(),
-            speed: records.iter().map(|r| r.speed).collect(),
-            velocity_x: records.iter().map(|r| r.velocity_x).collect(),
-            velocity_y: records.iter().map(|r| r.velocity_y).collect(),
-            velocity_z: records.iter().map(|r| r.velocity_z).collect(),
-            battery: records.iter().map(|r| r.battery_percent).collect(),
-            battery_voltage: records.iter().map(|r| r.battery_voltage).collect(),
-            battery_temp: records.iter().map(|r| r.battery_temp).collect(),
-            satellites: records.iter().map(|r| r.satellites).collect(),
-            rc_signal: records.iter().map(|r| r.rc_signal).collect(),
-            rc_uplink: records.iter().map(|r| r.rc_uplink).collect(),
-            rc_downlink: records.iter().map(|r| r.rc_downlink).collect(),
-            pitch: records.iter().map(|r| r.pitch).collect(),
-            roll: records.iter().map(|r| r.roll).collect(),
-            yaw: records.iter().map(|r| r.yaw).collect(),
+        let mut time = Vec::with_capacity(n);
+        let mut latitude = Vec::with_capacity(n);
+        let mut longitude = Vec::with_capacity(n);
+        let mut altitude = Vec::with_capacity(n);
+        let mut height = Vec::with_capacity(n);
+        let mut vps_height = Vec::with_capacity(n);
+        let mut speed = Vec::with_capacity(n);
+        let mut velocity_x = Vec::with_capacity(n);
+        let mut velocity_y = Vec::with_capacity(n);
+        let mut velocity_z = Vec::with_capacity(n);
+        let mut battery = Vec::with_capacity(n);
+        let mut battery_voltage = Vec::with_capacity(n);
+        let mut battery_temp = Vec::with_capacity(n);
+        let mut satellites = Vec::with_capacity(n);
+        let mut rc_signal = Vec::with_capacity(n);
+        let mut rc_uplink = Vec::with_capacity(n);
+        let mut rc_downlink = Vec::with_capacity(n);
+        let mut pitch = Vec::with_capacity(n);
+        let mut roll = Vec::with_capacity(n);
+        let mut yaw = Vec::with_capacity(n);
+
+        for r in records {
+            time.push((r.timestamp_ms - base_time) as f64 / 1000.0);
+            latitude.push(r.latitude);
+            longitude.push(r.longitude);
+            altitude.push(r.altitude);
+            height.push(r.height);
+            vps_height.push(r.vps_height);
+            speed.push(r.speed);
+            velocity_x.push(r.velocity_x);
+            velocity_y.push(r.velocity_y);
+            velocity_z.push(r.velocity_z);
+            battery.push(r.battery_percent);
+            battery_voltage.push(r.battery_voltage);
+            battery_temp.push(r.battery_temp);
+            satellites.push(r.satellites);
+            rc_signal.push(r.rc_signal);
+            rc_uplink.push(r.rc_uplink);
+            rc_downlink.push(r.rc_downlink);
+            pitch.push(r.pitch);
+            roll.push(r.roll);
+            yaw.push(r.yaw);
         }
+
+        Self {
+            time,
+            latitude,
+            longitude,
+            altitude,
+            height,
+            vps_height,
+            speed,
+            velocity_x,
+            velocity_y,
+            velocity_z,
+            battery,
+            battery_voltage,
+            battery_temp,
+            satellites,
+            rc_signal,
+            rc_uplink,
+            rc_downlink,
+            pitch,
+            roll,
+            yaw,
+        }
+    }
+
+    /// Extract a GPS track from the telemetry data for map visualization.
+    ///
+    /// Filters out null/zero coordinates and downsamples to `max_points`
+    /// using uniform stride. Returns `[lng, lat, height]` triples.
+    pub fn extract_track(&self, max_points: usize) -> Vec<[f64; 3]> {
+        // Collect valid GPS points
+        let valid: Vec<[f64; 3]> = self.latitude.iter()
+            .zip(self.longitude.iter())
+            .zip(self.height.iter().zip(self.vps_height.iter().zip(self.altitude.iter())))
+            .filter_map(|((lat, lng), (h, (vps, alt)))| {
+                let lat_v = (*lat)?;
+                let lng_v = (*lng)?;
+                // Skip 0,0 points
+                if lat_v.abs() < 0.000001 && lng_v.abs() < 0.000001 {
+                    return None;
+                }
+                let height_v = h.or(*vps).or(*alt).unwrap_or(0.0);
+                Some([lng_v, lat_v, height_v])
+            })
+            .collect();
+
+        if valid.len() <= max_points {
+            return valid;
+        }
+
+        // Downsample with uniform stride
+        let stride = valid.len() / max_points;
+        valid.into_iter()
+            .step_by(stride.max(1))
+            .collect()
     }
 }
 
