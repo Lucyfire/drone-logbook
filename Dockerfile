@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Rust backend build
 # ---------------------------------------------------------------------------
-FROM rust:1.82-bookworm AS backend-builder
+FROM rust:1.85-bookworm AS backend-builder
 
 # Install system deps for DuckDB bundled build
 RUN apt-get update && apt-get install -y \

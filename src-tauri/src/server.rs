@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Multipart, Query, State as AxumState},
+    extract::{DefaultBodyLimit, Multipart, Query, State as AxumState},
     http::StatusCode,
     routing::{delete, get, post, put},
     Json, Router,
@@ -318,6 +318,7 @@ pub fn build_router(state: WebAppState) -> Router {
         .route("/api/app_data_dir", get(get_app_data_dir))
         .route("/api/app_log_dir", get(get_app_log_dir))
         .layer(cors)
+        .layer(DefaultBodyLimit::max(250 * 1024 * 1024)) // 250 MB
         .with_state(state)
 }
 

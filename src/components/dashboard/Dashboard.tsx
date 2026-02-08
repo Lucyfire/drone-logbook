@@ -89,7 +89,7 @@ export function Dashboard() {
     }
   }, [activeView, loadOverview]);
 
-  const appIcon = new URL('../../../src-tauri/icons/icon.png', import.meta.url).href;
+  const appIcon = new URL('../../assets/icon.png', import.meta.url).href;
 
   return (
     <div className={`flex h-screen ${showSettings ? 'modal-open' : ''}`}>

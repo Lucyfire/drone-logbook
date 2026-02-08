@@ -1,6 +1,6 @@
 services:
   dji-logbook:
-    image: ghcr.io/arpanghosh8453/dji-logbook:latest
+    build: .
     ports:
       - "8080:80"
     volumes:

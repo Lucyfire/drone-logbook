@@ -194,7 +194,7 @@
       "main_rs": "Feature-gated: mod tauri_app for desktop, run_web() for Axum server.",
       "frontend_components": "FlightImporter, FlightList, FlightStats, SettingsModal updated with isWebMode() guards and dynamic imports.",
       "vite_config": "Web mode: /api proxy, conditional optimizeDeps, es2022 build target.",
-      "docker": "Multi-stage Dockerfile (rust:1.82 -> node:20 -> nginx:stable), docker-compose.yml, nginx.conf, entrypoint.sh.",
+      "docker": "Multi-stage Dockerfile (rust:1.85 -> node:20 -> nginx:stable), docker-compose.yml, nginx.conf, entrypoint.sh.",
       "npm_scripts": "Added dev:web and build:web scripts with VITE_BACKEND=web."
     },
     "dead_code_cleanup": {
