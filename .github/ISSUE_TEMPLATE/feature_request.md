@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for DJI Flight Log Viewer
+about: Suggest an idea for DJI Logbook
 title: "[FEATURE] "
 labels: enhancement
 assignees: arpanghosh8453

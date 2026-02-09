@@ -1,4 +1,4 @@
-//! DJI Flight Log Viewer - Backend
+//! DJI Logbook - Backend
 //!
 //! A high-performance application for analyzing DJI drone flight logs.
 //! Supports two build modes:
@@ -294,7 +294,7 @@ mod tauri_app {
             .setup(|app| {
                 let db = init_database(app.handle())?;
                 app.manage(AppState { db: Arc::new(db) });
-                log::info!("DJI Log Viewer initialized successfully");
+                log::info!("DJI Logbook initialized successfully");
                 Ok(())
             })
             .invoke_handler(tauri::generate_handler![
@@ -311,7 +311,7 @@ mod tauri_app {
                 get_app_log_dir,
             ])
             .run(tauri::generate_context!())
-            .expect("Failed to run DJI Log Viewer");
+            .expect("Failed to run DJI Logbook");
     }
 }
 

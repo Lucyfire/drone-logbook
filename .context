@@ -1,7 +1,7 @@
 {
   "project": {
-    "name": "DJI Log Viewer",
-    "goal": "Local-first DJI flight log viewer with charts, maps, and analytics. Available as a Tauri v2 desktop app or a Docker-deployable web app.",
+    "name": "DJI Logbook",
+    "goal": "Local-first DJI logbook with charts, maps, and analytics. Available as a Tauri v2 desktop app or a Docker-deployable web app.",
     "stack": {
       "desktop": "Tauri v2 (feature: tauri-app)",
       "web": "Axum 0.7 + Nginx (feature: web)",

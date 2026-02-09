@@ -1,4 +1,4 @@
-//! Data models for the DJI Log Viewer application.
+//! Data models for the DJI Logbook application.
 //!
 //! These structs are shared between Rust backend and TypeScript frontend
 //! via Tauri's IPC system with serde serialization.

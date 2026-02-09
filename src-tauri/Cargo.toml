@@ -1,8 +1,8 @@
 [package]
 name = "dji-logviewer"
 version = "0.1.0"
-description = "A high-performance DJI Drone Flight Log Analyzer"
-authors = ["DJI Logviewer Contributors"]
+description = "DJI Logbook — A high-performance DJI drone flight log analyzer"
+authors = ["DJI Logbook Contributors"]
 edition = "2021"
 rust-version = "1.70"
 

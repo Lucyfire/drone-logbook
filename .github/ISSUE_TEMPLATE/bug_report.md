@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a bug in DJI Flight Log Viewer
+about: Report a bug in DJI Logbook
 title: "[BUG] "
 labels: bug
 assignees: arpanghosh8453

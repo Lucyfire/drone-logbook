@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="src-tauri/icons/icon.png" alt="DJI Log Viewer" width="96" />
+    <img src="src-tauri/icons/icon.png" alt="DJI Logbook" width="96" />
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
 
 <hr>
 
-<h1 align="center">DJI Flight Log Viewer</h1>
+<h1 align="center">DJI Logbook</h1>
 
 
 <p align="center">A high-performance application for analyzing DJI drone flight logs. Available as a Tauri v2 desktop app or a Docker-deployable web app. Built with DuckDB and React.</p>
@@ -73,7 +73,7 @@ There is no installation step if you want to use the standalone binary builds, j
 
 ### macOS Users: "Damaged File" Error Fix
 
-If you see **"DJI Log Viewer is damaged and can't be opened"** on macOS (especially on M1/M2/M3/M4/M5 Macs), this is a Gatekeeper security warning for unsigned apps, **not a corrupted file**. For signing the files with a official apple developer account, it costs $99/year!
+If you see **"DJI Logbook is damaged and can't be opened"** on macOS (especially on M1/M2/M3/M4/M5 Macs), this is a Gatekeeper security warning for unsigned apps, **not a corrupted file**. For signing the files with a official apple developer account, it costs $99/year!
 
 **Quick Fix Remove quarantine attribute**
 

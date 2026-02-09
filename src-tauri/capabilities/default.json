@@ -1,7 +1,7 @@
 {
   "$schema": "https://schemas.tauri.app/config/2/capability",
   "identifier": "default",
-  "description": "Default capability for the DJI Log Viewer application",
+  "description": "Default capability for the DJI Logbook application",
   "windows": ["main"],
   "permissions": [
     "core:default",

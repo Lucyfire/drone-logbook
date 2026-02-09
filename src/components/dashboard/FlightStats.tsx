@@ -147,7 +147,7 @@ export function FlightStats({ data }: FlightStatsProps) {
       .join('\n');
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="DJI Log Viewer" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="DJI Logbook" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
     <name>${escapeXml(name)}</name>
     <time>${new Date().toISOString()}</time>

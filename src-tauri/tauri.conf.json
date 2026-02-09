@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DJI Log Viewer",
+  "productName": "DJI Logbook",
   "version": "1.5.0",
   "identifier": "com.dji-logviewer",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "DJI Flight Log Analyzer",
+        "title": "DJI Logbook",
         "width": 1400,
         "height": 900,
         "minWidth": 1600,
