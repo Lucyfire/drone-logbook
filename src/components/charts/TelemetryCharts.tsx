@@ -109,11 +109,16 @@ export function TelemetryCharts({ data, unitSystem, startTime }: TelemetryCharts
         syncZoom(chart);
       });
 
-      // Activate drag-to-zoom by default
-      chart.dispatchAction({
-        type: 'takeGlobalCursor',
-        key: 'dataZoomSelect',
-        dataZoomSelectActive: true,
+      // Activate drag-to-zoom by default after the toolbox feature is fully initialized.
+      // A deferred dispatch is required because onChartReady fires synchronously
+      // after setOption, before the toolbox dataZoom feature is ready to handle
+      // the takeGlobalCursor action.
+      requestAnimationFrame(() => {
+        chart.dispatchAction({
+          type: 'takeGlobalCursor',
+          key: 'dataZoomSelect',
+          dataZoomSelectActive: true,
+        });
       });
     },
     [syncZoom]
