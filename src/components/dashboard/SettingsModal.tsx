@@ -41,7 +41,46 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     regenerateSmartTags,
     isRegenerating,
     regenerationProgress,
+    supporterBadgeActive,
+    setSupporterBadge,
   } = useFlightStore();
+
+  const [showBadgeModal, setShowBadgeModal] = useState(false);
+  const [badgeCode, setBadgeCode] = useState('');
+  const [badgeMessage, setBadgeMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const SUPPORTER_HASH = '5978f3e898c83b40c90017c88b8048f80a5acfd020bbd073af794e710603067d';
+
+  const handleActivateBadge = async () => {
+    setBadgeMessage(null);
+    const trimmed = badgeCode.trim();
+    if (!trimmed) {
+      setBadgeMessage({ type: 'error', text: 'Please enter a supporter code.' });
+      return;
+    }
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(trimmed);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      if (hashHex === SUPPORTER_HASH) {
+        setSupporterBadge(true);
+        setBadgeMessage({ type: 'success', text: '🎉 Supporter badge activated! Thank you for your support!' });
+        setBadgeCode('');
+      } else {
+        setBadgeMessage({ type: 'error', text: 'Error: Invalid code. Please check and try again.' });
+      }
+    } catch {
+      setBadgeMessage({ type: 'error', text: 'Error: Could not verify code.' });
+    }
+  };
+
+  const handleRemoveBadge = () => {
+    setSupporterBadge(false);
+    setBadgeMessage(null);
+    setShowBadgeModal(false);
+  };
 
   // True when any long-running destructive/IO operation is in progress
   const isBusy = isBackingUp || isRestoring || isDeleting || isRegenerating;
@@ -215,7 +254,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       />
 
       {/* Modal */}
-      <div className="relative bg-dji-secondary rounded-xl border border-gray-700 shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="relative bg-dji-secondary rounded-xl border border-gray-700 shadow-2xl w-full max-w-3xl mx-4 overflow-hidden">
         {/* Blocking overlay while a long-running operation is in progress */}
         {isBusy && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[2px] rounded-xl">
@@ -255,275 +294,415 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Units */}
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-300 whitespace-nowrap w-[15%] shrink-0">
-              Units
-            </label>
-            <Select
-              value={unitSystem}
-              onChange={(v) => setUnitSystem(v as 'metric' | 'imperial')}
-              className="w-[85%]"
-              options={[
-                { value: 'metric', label: 'Metric (m, km/h)' },
-                { value: 'imperial', label: 'Imperial (ft, mph)' },
-              ]}
-            />
-          </div>
-
-          {/* Theme */}
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-300 whitespace-nowrap w-[15%] shrink-0">
-              Theme
-            </label>
-            <Select
-              value={themeMode}
-              onChange={(v) => setThemeMode(v as 'system' | 'dark' | 'light')}
-              className="w-[85%]"
-              options={[
-                { value: 'system', label: 'System' },
-                { value: 'dark', label: 'Dark' },
-                { value: 'light', label: 'Light' },
-              ]}
-            />
-          </div>
-
-          {/* Smart Tags */}
-          <div>
-            <p className="text-sm font-medium text-gray-300 mb-2">Smart Tags</p>
-            <button
-              type="button"
-              onClick={() => setSmartTagsEnabled(!smartTagsEnabled)}
-              className="flex items-center justify-between gap-3 w-full text-[0.85rem] text-gray-300"
-              aria-pressed={smartTagsEnabled}
-            >
-              <span>Intelligent flight tags</span>
-              <span
-                className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
-                  smartTagsEnabled
-                    ? 'bg-dji-primary/90 border-dji-primary'
-                    : 'bg-dji-surface border-gray-600'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    smartTagsEnabled ? 'translate-x-4' : 'translate-x-1'
-                  }`}
-                />
-              </span>
-            </button>
-            <p className="text-xs text-gray-500 mt-1">
-              Automatically generate descriptive tags when importing flights.
-            </p>
-
-            <button
-              type="button"
-              onClick={async () => {
-                const msg = await regenerateSmartTags();
-                setMessage({ type: 'success', text: msg });
-              }}
-              disabled={isBusy}
-              className="mt-3 w-full py-2 px-3 rounded-lg border border-teal-600 text-teal-400 hover:bg-teal-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-            >
-              <span className="flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Regenerate smart tags
-              </span>
-            </button>
-          </div>
-
-          {/* API Key Section */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              DJI API Key
-            </label>
-            <p className="text-xs text-gray-500 mb-3">
-              For decrypting V13+ flight logs. Get your own key following{' '}
-              <a
-                href="https://github.com/arpanghosh8453/dji-logbook#how-to-obtain-your-own-dji-developer-api-key"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-dji-primary hover:underline"
-              >
-                this guide
-              </a>
-            </p>
-
-            {/* Status indicator */}
-            <div className="flex items-center gap-2 mb-3">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  hasKey ? 'bg-green-500' : 'bg-yellow-500'
-                }`}
+        {/* Content — two columns */}
+        <div className="p-4 flex gap-0 max-h-[70vh] overflow-y-auto">
+          {/* Left Column: Preferences & API Key */}
+          <div className="flex-1 space-y-4 pr-5">
+            {/* Units */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-gray-300 whitespace-nowrap w-[15%] shrink-0">
+                Units
+              </label>
+              <Select
+                value={unitSystem}
+                onChange={(v) => setUnitSystem(v as 'metric' | 'imperial')}
+                className="w-[85%]"
+                options={[
+                  { value: 'metric', label: 'Metric (m, km/h)' },
+                  { value: 'imperial', label: 'Imperial (ft, mph)' },
+                ]}
               />
-              <span className="text-sm text-gray-400">
-                {hasKey ? 'API key configured' : 'No API key configured'}
-              </span>
             </div>
 
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={hasKey ? '••••••••••••••••' : 'Enter your DJI API key'}
-              className="input w-full"
-            />
+            {/* Theme */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-gray-300 whitespace-nowrap w-[15%] shrink-0">
+                Theme
+              </label>
+              <Select
+                value={themeMode}
+                onChange={(v) => setThemeMode(v as 'system' | 'dark' | 'light')}
+                className="w-[85%]"
+                options={[
+                  { value: 'system', label: 'System' },
+                  { value: 'dark', label: 'Dark' },
+                  { value: 'light', label: 'Light' },
+                ]}
+              />
+            </div>
 
-            <button
-              onClick={handleSave}
-              disabled={isSaving || !apiKey.trim()}
-              className="btn-primary w-full mt-3"
-            >
-              {isSaving ? 'Saving...' : hasKey ? 'Update API Key' : 'Save API Key'}
-            </button>
-
-            {/* Message (auto-dismisses after 5s) */}
-            {message && (
-              <p
-                className={`mt-2 text-sm text-center ${
-                  message.type === 'success' ? 'text-green-400' : 'text-red-400'
-                }`}
+            {/* Smart Tags */}
+            <div>
+              <p className="text-sm font-medium text-gray-300 mb-2">Smart Tags</p>
+              <button
+                type="button"
+                onClick={() => setSmartTagsEnabled(!smartTagsEnabled)}
+                className="flex items-center justify-between gap-3 w-full text-[0.85rem] text-gray-300"
+                aria-pressed={smartTagsEnabled}
               >
-                {message.text}
-              </p>
-            )}
-
-            <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-400">
-              Donation status
-            </p>
-            <button
-              type="button"
-              onClick={() => setDonationAcknowledged(!donationAcknowledged)}
-              className="mt-2 flex items-center justify-between gap-3 w-full text-[0.85rem] text-gray-300"
-              aria-pressed={donationAcknowledged}
-            >
-              <span>Already donated. Remove banner permanently</span>
-              <span
-                className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
-                  donationAcknowledged
-                    ? 'bg-dji-primary/90 border-dji-primary'
-                    : 'bg-dji-surface border-gray-600'
-                }`}
-              >
+                <span>Intelligent flight tags</span>
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    donationAcknowledged ? 'translate-x-4' : 'translate-x-1'
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
+                    smartTagsEnabled
+                      ? 'bg-dji-primary/90 border-dji-primary'
+                      : 'bg-dji-surface border-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      smartTagsEnabled ? 'translate-x-4' : 'translate-x-1'
+                    }`}
+                  />
+                </span>
+              </button>
+              <p className="text-xs text-gray-500 mt-1">
+                Automatically generate descriptive tags when importing flights.
+              </p>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const msg = await regenerateSmartTags();
+                  setMessage({ type: 'success', text: msg });
+                }}
+                disabled={isBusy}
+                className="mt-3 w-full py-2 px-3 rounded-lg border border-teal-600 text-teal-400 hover:bg-teal-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Regenerate smart tags
+                </span>
+              </button>
+            </div>
+
+            {/* API Key Section */}
+            <div className="pt-4 border-t border-gray-700">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                DJI API Key
+              </label>
+              <p className="text-xs text-gray-500 mb-3">
+                For decrypting V13+ flight logs. Get your own key following{' '}
+                <a
+                  href="https://github.com/arpanghosh8453/dji-logbook#how-to-obtain-your-own-dji-developer-api-key"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-dji-primary hover:underline"
+                >
+                  this guide
+                </a>
+              </p>
+
+              {/* Status indicator */}
+              <div className="flex items-center gap-2 mb-3">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    hasKey ? 'bg-green-500' : 'bg-yellow-500'
                   }`}
                 />
-              </span>
-            </button>
+                <span className="text-sm text-gray-400">
+                  {hasKey ? 'API key configured' : 'No API key configured'}
+                </span>
+              </div>
+
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={hasKey ? '••••••••••••••••' : 'Enter your DJI API key'}
+                className="input w-full"
+              />
+
+              <button
+                onClick={handleSave}
+                disabled={isSaving || !apiKey.trim()}
+                className="btn-primary w-full mt-3"
+              >
+                {isSaving ? 'Saving...' : hasKey ? 'Update API Key' : 'Save API Key'}
+              </button>
+
+              {/* Message (auto-dismisses after 5s) */}
+              {message && (
+                <p
+                  className={`mt-2 text-sm text-center ${
+                    message.type === 'success' ? 'text-green-400' : 'text-red-400'
+                  }`}
+                >
+                  {message.text}
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Info Section */}
-          <div className="pt-4 border-t border-gray-700">
-            <p className="text-xs text-gray-500">
-              <strong className="text-gray-400">App Version:</strong>{' '}
-              <span className="text-gray-400">{appVersion || '...'}</span>
-            </p>
-            <p className="text-xs text-gray-500 mt-2">
-              <strong className="text-gray-400">Data Location:</strong>
-              <br />
-              <code className="text-xs text-gray-400 bg-dji-dark px-1 py-0.5 rounded">
-                {appDataDir || 'Loading...'}
-              </code>
-            </p>
-            <p className="text-xs text-gray-500 mt-2">
-              <strong className="text-gray-400">Log Location:</strong>
-              <br />
-              <code className="text-xs text-gray-400 bg-dji-dark px-1 py-0.5 rounded">
-                {appLogDir || 'Loading...'}
-              </code>
-            </p>
-            <p className="text-xs text-gray-500 mt-2">
-              Your API key is stored locally in <code className="text-gray-400">config.json</code> and never sent to any external servers except DJI's official API.
-            </p>
+          {/* Vertical Divider */}
+          <div className="w-px bg-gray-700 shrink-0" />
+
+          {/* Right Column: Donation, Support, Info & Data */}
+          <div className="flex-1 space-y-4 pl-5">
+            {/* Donation Status */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Donation status
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!supporterBadgeActive) {
+                    setDonationAcknowledged(!donationAcknowledged);
+                  }
+                }}
+                className={`mt-2 flex items-center justify-between gap-3 w-full text-[0.85rem] text-gray-300 ${supporterBadgeActive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                aria-pressed={donationAcknowledged}
+                disabled={supporterBadgeActive}
+              >
+                <span>Already donated. Remove banner permanently</span>
+                <span
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
+                    donationAcknowledged
+                      ? 'bg-dji-primary/90 border-dji-primary'
+                      : 'bg-dji-surface border-gray-600'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      donationAcknowledged ? 'translate-x-4' : 'translate-x-1'
+                    }`}
+                  />
+                </span>
+              </button>
+              {supporterBadgeActive && (
+                <p className="text-xs text-amber-400/80 mt-1">Locked — supporter badge is active.</p>
+              )}
+
+              {/* Supporter Badge Button */}
+              <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+                Show your love by supporting this project — your donation keeps development running and new features coming.
+              </p>
+              <button
+                type="button"
+                onClick={() => { setShowBadgeModal(true); setBadgeMessage(null); setBadgeCode(''); }}
+                className={`mt-3 w-full py-2 px-3 rounded-lg border text-sm transition-colors ${
+                  supporterBadgeActive
+                    ? 'border-amber-500/50 text-amber-400 hover:bg-amber-500/10'
+                    : 'border-violet-500/50 text-violet-400 hover:bg-violet-500/10'
+                }`}
+              >
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                  {supporterBadgeActive ? 'Manage Supporter Badge' : 'Get Supporter Badge'}
+                </span>
+              </button>
+            </div>
+
+            {/* Info Section */}
+            <div className="pt-4 border-t border-gray-700">
+              <p className="text-xs text-gray-500">
+                <strong className="text-gray-400">App Version:</strong>{' '}
+                <span className="text-gray-400">{appVersion || '...'}</span>
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                <strong className="text-gray-400">Data Location:</strong>
+                <br />
+                <code className="text-xs text-gray-400 bg-dji-dark px-1 py-0.5 rounded break-all">
+                  {appDataDir || 'Loading...'}
+                </code>
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                <strong className="text-gray-400">Log Location:</strong>
+                <br />
+                <code className="text-xs text-gray-400 bg-dji-dark px-1 py-0.5 rounded break-all">
+                  {appLogDir || 'Loading...'}
+                </code>
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                Your API key is stored locally in <code className="text-gray-400">config.json</code> and never sent to any external servers except DJI's official API.
+              </p>
+            </div>
 
             {/* Backup & Restore */}
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={handleBackup}
-                disabled={isBusy}
-                className="flex-1 py-2 px-3 rounded-lg border border-sky-600 text-sky-400 hover:bg-sky-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              >
-                {isBackingUp ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-                      <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
-                    </svg>
-                    Exporting…
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
-                    </svg>
-                    Backup Database
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={handleRestore}
-                disabled={isBusy}
-                className="flex-1 py-2 px-3 rounded-lg border border-amber-600 text-amber-400 hover:bg-amber-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              >
-                {isRestoring ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-                      <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
-                    </svg>
-                    Restoring…
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 6l-4-4m0 0L8 6m4-4v13" />
-                    </svg>
-                    Import Backup
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {confirmDeleteAll ? (
-              <div className="mt-4 rounded-lg border border-red-600/60 bg-red-500/10 p-3">
-                <p className="text-xs text-red-200">
-                  This action cannot be undone and will remove all flight logs.
-                </p>
-                <div className="mt-2 flex items-center gap-3">
-                  <button
-                    onClick={handleDeleteAll}
-                    className="text-xs text-red-300 hover:text-red-200"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setConfirmDeleteAll(false)}
-                    className="text-xs text-gray-400 hover:text-gray-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
+            <div className="pt-4 border-t border-gray-700">
+              <div className="flex gap-3">
+                <button
+                  onClick={handleBackup}
+                  disabled={isBusy}
+                  className="flex-1 py-2 px-3 rounded-lg border border-sky-600 text-sky-400 hover:bg-sky-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {isBackingUp ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                        <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
+                      </svg>
+                      Exporting…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+                      </svg>
+                      Backup Database
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={handleRestore}
+                  disabled={isBusy}
+                  className="flex-1 py-2 px-3 rounded-lg border border-amber-600 text-amber-400 hover:bg-amber-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {isRestoring ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                        <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
+                      </svg>
+                      Restoring…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 6l-4-4m0 0L8 6m4-4v13" />
+                      </svg>
+                      Import Backup
+                    </span>
+                  )}
+                </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setConfirmDeleteAll(true)}
-                disabled={isBusy}
-                className="mt-4 w-full py-2 px-3 rounded-lg border border-red-600 text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Delete all logs
-              </button>
-            )}
+
+              {confirmDeleteAll ? (
+                <div className="mt-4 rounded-lg border border-red-600/60 bg-red-500/10 p-3">
+                  <p className="text-xs text-red-200">
+                    This action cannot be undone and will remove all flight logs.
+                  </p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      onClick={handleDeleteAll}
+                      className="text-xs text-red-300 hover:text-red-200"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteAll(false)}
+                      className="text-xs text-gray-400 hover:text-gray-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteAll(true)}
+                  disabled={isBusy}
+                  className="mt-4 w-full py-2 px-3 rounded-lg border border-red-600 text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Delete all logs
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Footer */}
       </div>
+
+      {/* Supporter Badge Activation Modal */}
+      {showBadgeModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowBadgeModal(false)}
+          />
+          <div className="relative bg-dji-secondary rounded-xl border border-gray-700 shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                Supporter Badge
+              </h3>
+              <button
+                onClick={() => setShowBadgeModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {supporterBadgeActive ? (
+                <>
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                    <svg className="w-5 h-5 text-amber-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                    <p className="text-sm text-amber-300">Your supporter badge is active. Thank you for supporting this project!</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveBadge}
+                    className="w-full py-2 px-3 rounded-lg border border-red-600 text-red-500 hover:bg-red-500/10 transition-colors text-sm"
+                  >
+                    Remove Supporter Badge
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2 text-sm text-gray-300">
+                    <p className="flex gap-2">
+                      <span className="text-dji-primary font-semibold shrink-0">1.</span>
+                      <span>
+                        Visit{' '}
+                        <a
+                          href="https://ko-fi.com/s/e06c1d4359"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-dji-primary hover:underline font-medium"
+                        >
+                          this page
+                        </a>
+                        {' '}to get your supporter code.
+                      </span>
+                    </p>
+                    <p className="flex gap-2">
+                      <span className="text-dji-primary font-semibold shrink-0">2.</span>
+                      <span>Enter the code below to activate your Supporter Badge.</span>
+                    </p>
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={badgeCode}
+                      onChange={(e) => setBadgeCode(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleActivateBadge(); }}
+                      placeholder="Enter your supporter code"
+                      className="input w-full"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleActivateBadge}
+                      disabled={!badgeCode.trim()}
+                      className="btn-primary w-full mt-3"
+                    >
+                      Activate Supporter Badge
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {badgeMessage && (
+                <p className={`text-sm text-center ${badgeMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                  {badgeMessage.text}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

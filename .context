@@ -109,7 +109,7 @@
       "UI polish: Sidebar width remembered across sessions via localStorage.",
       "UI polish: Layout clipping fixes for Tauri on Linux (100vh -> 100% for title bar area).",
       "UI polish: Battery serial rename mapping (frontend-only, persisted to localStorage, shown everywhere).",
-      "UI polish: App min-width 1600px with horizontal scrollbar when window is narrower.",
+      "UI polish: Horizontal scrollbar on Overview (min-w-[1100px]) and Flights detail view (min-w-[1100px]) when window is narrower than content.",
       "UI polish: WeatherModal rendered via createPortal to document.body with modal-open class for scrollbar suppression.",
       "Smart Tags: Auto-generated descriptive tags on import (Night Flight, High Speed, Cold Battery, Heavy Load, Low Battery, High Altitude, Long Distance, Long Flight, Short Flight, Aggressive Flying, No GPS) plus offline reverse geocoding (city, country, continent) via reverse_geocoder crate.",
       "Smart Tags: Two tag types — auto (teal capsules) and manual (violet capsules). Add/remove manual tags via FlightStats. Settings toggle to enable/disable auto-tagging on import. Regenerate smart tags for all flights button in Settings.",
@@ -119,7 +119,11 @@
       "Backup & Restore: Export full database (flights, telemetry, keychains, flight_tags) to a portable gzip-compressed tar archive of Parquet files. Import restores data with upsert semantics. Works in both Tauri (native save/open dialogs) and web (browser download/upload).",
       "Data safety: DB backup, corruption handling, telemetry rebuild when column order mismatches.",
       "Docker/Web deployment: Axum REST API mirroring all Tauri commands, Nginx reverse proxy, multi-stage Docker build.",
-      "Dual-mode frontend: api.ts adapter uses invoke() for Tauri, fetch() for web. All @tauri-apps imports are dynamic."
+      "Dual-mode frontend: api.ts adapter uses invoke() for Tauri, fetch() for web. All @tauri-apps imports are dynamic.",
+      "Supporter Badge: SHA-256 verified activation code system. Badge displayed in sidebar header between app title and settings icon. Activation modal in settings with Ko-fi donation instructions. Badge persisted to localStorage. Donation toggle locked when badge active. CSS animations (fadeIn, starPulse) with light mode overrides.",
+      "Settings modal: Two-column layout (max-w-3xl). Left column: Units, Theme, Smart Tags, API Key. Right column: Donation status, Supporter Badge, App info, Backup/Restore, Delete all logs.",
+      "App version: Displayed in settings. Reads from Tauri API (desktop) or Vite-injected __APP_VERSION__ (web). vite.config.ts reads version from src-tauri/tauri.conf.json with existsSync fallback to package.json for Docker builds.",
+      "Filter inversion: Uses AND logic for inverted filters (NOT A AND NOT B) — each filter condition individually inverted rather than inverting the combined result."
     ],
     "out_of_scope": [
       "Cloud sync",
@@ -145,7 +149,7 @@
         "src/index.css",
         "tailwind.config.js"
       ],
-      "state_store": "src/stores/flightStore.ts (includes batteryNameMap persisted to localStorage, sidebarFilteredFlightIds for Overview filter sync, allTags, smartTagsEnabled, isRegenerating, addTag/removeTag/regenerateSmartTags actions)",
+      "state_store": "src/stores/flightStore.ts (includes batteryNameMap persisted to localStorage, sidebarFilteredFlightIds for Overview filter sync, allTags, smartTagsEnabled, isRegenerating, addTag/removeTag/regenerateSmartTags actions, supporterBadgeActive persisted to localStorage, setSupporterBadge action)",
       "api_adapter": "src/lib/api.ts",
       "types": "src/types/index.ts",
       "env_types": "src/vite-env.d.ts"
@@ -253,6 +257,15 @@
       "backup_tags": "database.rs: flight_tags table included in backup export and restore.",
       "api_endpoints": "server.rs: POST /api/flights/tags/add, POST /api/flights/tags/remove, GET /api/tags, GET/POST /api/settings/smart_tags, POST /api/regenerate_smart_tags.",
       "tauri_commands": "main.rs: add_flight_tag, remove_flight_tag, get_all_tags, get_smart_tags_enabled, set_smart_tags_enabled, regenerate_all_smart_tags."
+    },
+    "v2_1_0_supporter_badge_and_polish": {
+      "description": "Supporter badge system, settings modal redesign, horizontal scrollbar fix, filter inversion logic fix, app version display, Docker build fix.",
+      "supporter_badge": "flightStore.ts: supporterBadgeActive state persisted to localStorage, setSupporterBadge action. Dashboard.tsx: Badge in sidebar header between title and settings icon (amber gradient, star with pulse animation). SettingsModal.tsx: SHA-256 code verification via Web Crypto API, activation modal with Ko-fi instructions, manage/remove badge flow. Donation toggle locked when badge active. index.css: badgeFadeIn and starPulse animations with light mode overrides.",
+      "settings_two_column": "SettingsModal.tsx: Widened from max-w-md to max-w-3xl. Content uses flex layout with vertical divider (w-px bg-gray-700). Left: Units, Theme, Smart Tags, API Key. Right: Donation, Supporter Badge, Info, Backup/Restore, Delete.",
+      "horizontal_scrollbar": "App.tsx: Removed minWidth:1600, changed to overflow-hidden. Dashboard.tsx: Overview and Flights detail views wrapped in overflow-auto containers with min-w-[1100px] inner content for horizontal scrollbar.",
+      "filter_inversion_fix": "FlightList.tsx: Changed from NOT(A AND B) to (NOT A AND NOT B) — each filter individually inverted for correct AND semantics.",
+      "app_version": "SettingsModal.tsx: fetchAppVersion() tries Tauri getVersion() then falls back to __APP_VERSION__. vite.config.ts: reads version from tauri.conf.json with existsSync fallback to package.json for Docker.",
+      "docker_build_fix": "vite.config.ts: Uses existsSync check for src-tauri/tauri.conf.json, falls back to package.json version. Prevents build failure in Docker frontend stage where src-tauri is absent."
     },
     "v1_5_0_sidebar_and_telemetry": {
       "description": "Sidebar UX polish, unified sidebar filters for Overview, weather modal fix, map replay telemetry overlay.",
@@ -466,7 +479,7 @@
   },
   "ui": {
     "themes": "CSS variables in src/index.css; body classes theme-light/theme-dark. Light mode uses !important overrides.",
-    "filters": "Flight list uses date range popover (react-day-picker), drone and battery selects (searchable via type-to-filter), dual-thumb duration slider, and multi-select tag filter. Filter inversion button (circular arrows) negates all active filters. Collapsible filter/import panels persisted to localStorage. Overview shares sidebar filters via store.",
+    "filters": "Flight list uses date range popover (react-day-picker), drone and battery selects (searchable via type-to-filter), dual-thumb duration slider, and multi-select tag filter. Filter inversion button (circular arrows) individually negates each active filter (AND logic: NOT A AND NOT B). Collapsible filter/import panels persisted to localStorage. Overview shares sidebar filters via store.",
     "flight_list": "Simple compact list with always-visible rename (pencil icon, sky-400) and delete (trash icon, red-400) icons. Subtitle shows date . duration . distance.",
     "charts": "ECharts with synced zoom; global drag-to-zoom toggle + reset zoom buttons; tooltip header uses pill capsules. Theme-aware base config. Hidden per-chart toolbox enables selection highlight for drag-to-zoom.",
     "map": "MapLibre terrain with deck.gl overlay. Spline-smoothed color-by gradient path, shadow layer, start/end/home markers, hover tooltip. Replay telemetry overlay with live-interpolated data during playback.",

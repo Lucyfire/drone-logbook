@@ -21,6 +21,7 @@ interface FlightState {
   unitSystem: 'metric' | 'imperial';
   themeMode: 'system' | 'dark' | 'light';
   donationAcknowledged: boolean;
+  supporterBadgeActive: boolean;
   allTags: string[];
   smartTagsEnabled: boolean;
 
@@ -43,6 +44,7 @@ interface FlightState {
   setUnitSystem: (unitSystem: 'metric' | 'imperial') => void;
   setThemeMode: (themeMode: 'system' | 'dark' | 'light') => void;
   setDonationAcknowledged: (value: boolean) => void;
+  setSupporterBadge: (active: boolean) => void;
   clearSelection: () => void;
   clearError: () => void;
 
@@ -81,6 +83,10 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   donationAcknowledged:
     typeof localStorage !== 'undefined'
       ? localStorage.getItem('donationAcknowledged') === 'true'
+      : false,
+  supporterBadgeActive:
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem('supporterBadgeActive') === 'true'
       : false,
   _flightDataCache: new Map(),
   allTags: [],
@@ -408,6 +414,17 @@ export const useFlightStore = create<FlightState>((set, get) => ({
       localStorage.setItem('donationAcknowledged', String(value));
     }
     set({ donationAcknowledged: value });
+  },
+
+  setSupporterBadge: (active) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('supporterBadgeActive', String(active));
+    }
+    set({ supporterBadgeActive: active });
+    // Activating badge also acknowledges donation
+    if (active) {
+      get().setDonationAcknowledged(true);
+    }
   },
 
   renameBattery: (serial: string, displayName: string) => {
