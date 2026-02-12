@@ -34,7 +34,7 @@ export function Dashboard() {
       const stored = localStorage.getItem('sidebarWidth');
       if (stored) {
         const parsed = Number(stored);
-        if (parsed >= 220 && parsed <= 420) return parsed;
+        if (parsed >= 280 && parsed <= 420) return parsed;
       }
     }
     return 288;
@@ -68,7 +68,7 @@ export function Dashboard() {
   useEffect(() => {
     const handleMouseMove = (event: MouseEvent) => {
       if (resizingRef.current === 'sidebar') {
-        const nextWidth = Math.min(Math.max(event.clientX, 220), 420);
+        const nextWidth = Math.min(Math.max(event.clientX, 280), 420);
         setSidebarWidth(nextWidth);
       }
       if (resizingRef.current === 'main') {
@@ -135,7 +135,7 @@ export function Dashboard() {
       {!isSidebarHidden && (
         <aside
           className="bg-dji-secondary border-r border-gray-700 flex flex-col relative overflow-visible z-40"
-          style={{ width: sidebarWidth }}
+          style={{ width: sidebarWidth, minWidth: 280 }}
         >
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <div>

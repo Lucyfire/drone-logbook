@@ -600,14 +600,14 @@ export function FlightImporter() {
   return (
     <div
       {...(isWebMode() ? getRootProps() : {})}
-      className={`drop-zone p-4 text-center ${isDragActive ? 'active' : ''}`}
+      className={`drop-zone p-4 text-center overflow-hidden ${isDragActive ? 'active' : ''}`}
     >
       {isWebMode() && <input {...getInputProps()} />}
 
       {isImporting || isBatchProcessing || isSyncing ? (
         <div className="flex flex-col items-center gap-2">
           <div className="w-6 h-6 border-2 border-dji-primary border-t-transparent rounded-full spinner" />
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-gray-400 break-all text-center w-full px-2">
             {cooldownRemaining > 0
               ? `Cooling down... ${cooldownRemaining}s`
               : isSyncing
