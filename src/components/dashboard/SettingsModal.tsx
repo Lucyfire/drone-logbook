@@ -123,6 +123,18 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     };
   }, [isOpen]);
 
+  // Close on Escape key (unless busy)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isBusy) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isBusy, onClose]);
+
   const checkApiKey = async () => {
     try {
       const exists = await api.hasApiKey();

@@ -48,6 +48,9 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
   const [selectedDrone, setSelectedDrone] = useState('');
   const [selectedBattery, setSelectedBattery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  
+  // For keyboard navigation: preview ID for visual highlighting before Enter confirms selection
+  const [previewFlightId, setPreviewFlightId] = useState<number | null>(null);
   const [isFilterInverted, setIsFilterInverted] = useState(false);
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
@@ -59,6 +62,7 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
   >('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [sortHighlightedIndex, setSortHighlightedIndex] = useState(0);
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(() => {
     if (typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem('filtersCollapsed');
@@ -67,12 +71,17 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
     return true;
   });
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const [exportHighlightedIndex, setExportHighlightedIndex] = useState(0);
+  const [tagHighlightedIndex, setTagHighlightedIndex] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0, currentFile: '' });
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState({ done: 0, total: 0, currentFile: '' });
   const dateButtonRef = useRef<HTMLButtonElement | null>(null);
   const sortButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sortDropdownRef = useRef<HTMLDivElement | null>(null);
+  const exportDropdownRef = useRef<HTMLDivElement | null>(null);
+  const tagDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const dateFormatter = useMemo(
     () =>
@@ -144,16 +153,31 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
     };
   }, [isDateOpen, updateDateAnchor]);
 
+  // Sort dropdown keyboard navigation
   useEffect(() => {
-    if (!isSortOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsSortOpen(false);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    if (!isSortOpen) {
+      setSortHighlightedIndex(0);
+      return;
+    }
+    sortDropdownRef.current?.focus();
   }, [isSortOpen]);
+
+  // Export dropdown keyboard navigation
+  useEffect(() => {
+    if (!isExportDropdownOpen) {
+      setExportHighlightedIndex(0);
+      return;
+    }
+    exportDropdownRef.current?.focus();
+  }, [isExportDropdownOpen]);
+
+  // Tag dropdown keyboard navigation
+  useEffect(() => {
+    if (!isTagDropdownOpen) {
+      setTagHighlightedIndex(0);
+      return;
+    }
+  }, [isTagDropdownOpen]);
 
   const droneOptions = useMemo(() => {
     const entries = flights
@@ -316,6 +340,64 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
     });
     return list;
   }, [getFlightTitle, searchedFlights, sortDirection, sortOption]);
+
+  // Keyboard navigation: Up/Down arrows to navigate flights
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't handle if typing in an input field
+      const target = event.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      
+      // Don't handle if a modal/dropdown is open
+      if (isDateOpen || isSortOpen || isTagDropdownOpen || isExportDropdownOpen || editingId !== null) {
+        return;
+      }
+
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        
+        if (sortedFlights.length === 0) return;
+        
+        // Use previewFlightId if set (during navigation), otherwise use selectedFlightId
+        const currentId = previewFlightId ?? selectedFlightId;
+        const currentIndex = currentId 
+          ? sortedFlights.findIndex(f => f.id === currentId)
+          : -1;
+        
+        let nextIndex: number;
+        if (event.key === 'ArrowDown') {
+          nextIndex = currentIndex < sortedFlights.length - 1 ? currentIndex + 1 : 0;
+        } else {
+          nextIndex = currentIndex > 0 ? currentIndex - 1 : sortedFlights.length - 1;
+        }
+        
+        const nextFlight = sortedFlights[nextIndex];
+        if (nextFlight) {
+          // Update preview for visual feedback (does not load flight data)
+          setPreviewFlightId(nextFlight.id);
+          
+          // Scroll the item into view
+          const flightElement = document.querySelector(`[data-flight-id="${nextFlight.id}"]`);
+          flightElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+      
+      // Enter key selects and loads the previewed flight
+      if (event.key === 'Enter' && previewFlightId !== null) {
+        event.preventDefault();
+        selectFlight(previewFlightId);
+        onSelectFlight?.(previewFlightId);
+        setPreviewFlightId(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [sortedFlights, selectedFlightId, previewFlightId, selectFlight, onSelectFlight, isDateOpen, isSortOpen, isTagDropdownOpen, isExportDropdownOpen, editingId]);
 
   const sortOptions = useMemo(
     () => [
@@ -818,71 +900,69 @@ ${points}
         </div>
 
         {/* Duration range slider */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs text-gray-400">Duration</label>
-            <span className="text-xs font-medium text-gray-200">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400 whitespace-nowrap w-[52px] flex-shrink-0 text-center">Duration</label>
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <div className="flex-1 min-w-0">
               {(() => {
                 const lo = durationFilterMin ?? durationRange.minMins;
                 const hi = durationFilterMax ?? durationRange.maxMins;
-                const fmt = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+                const span = Math.max(durationRange.maxMins - durationRange.minMins, 1);
+                const loPct = ((lo - durationRange.minMins) / span) * 100;
+                const hiPct = ((hi - durationRange.minMins) / span) * 100;
+                return (
+                  <div className="dual-range-wrap" style={{ '--lo-pct': `${loPct}%`, '--hi-pct': `${hiPct}%` } as React.CSSProperties}>
+                    <div className="dual-range-track" />
+                    <div className="dual-range-fill" />
+                    <input
+                      type="range"
+                      min={durationRange.minMins}
+                      max={durationRange.maxMins}
+                      step={1}
+                      value={lo}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        const clamped = Math.min(val, hi - 1);
+                        setDurationFilterMin(clamped <= durationRange.minMins ? null : clamped);
+                      }}
+                      className="dual-range-input"
+                    />
+                    <input
+                      type="range"
+                      min={durationRange.minMins}
+                      max={durationRange.maxMins}
+                      step={1}
+                      value={hi}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        const clamped = Math.max(val, lo + 1);
+                        setDurationFilterMax(clamped >= durationRange.maxMins ? null : clamped);
+                      }}
+                      className="dual-range-input"
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+            <span className="text-xs font-medium text-gray-200 whitespace-nowrap min-w-[60px] text-right flex-shrink-0">
+              {(() => {
+                const lo = durationFilterMin ?? durationRange.minMins;
+                const hi = durationFilterMax ?? durationRange.maxMins;
+                const fmt = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 > 0 ? m % 60 : ''}` : `${m}m`;
                 if (durationFilterMin === null && durationFilterMax === null) return 'Any';
-                return `${fmt(lo)} – ${fmt(hi)}`;
+                return `${fmt(lo)}–${fmt(hi)}`;
               })()}
             </span>
           </div>
-          {(() => {
-            const lo = durationFilterMin ?? durationRange.minMins;
-            const hi = durationFilterMax ?? durationRange.maxMins;
-            const span = Math.max(durationRange.maxMins - durationRange.minMins, 1);
-            const loPct = ((lo - durationRange.minMins) / span) * 100;
-            const hiPct = ((hi - durationRange.minMins) / span) * 100;
-            return (
-              <div className="dual-range-wrap" style={{ '--lo-pct': `${loPct}%`, '--hi-pct': `${hiPct}%` } as React.CSSProperties}>
-                <div className="dual-range-track" />
-                <div className="dual-range-fill" />
-                <input
-                  type="range"
-                  min={durationRange.minMins}
-                  max={durationRange.maxMins}
-                  step={1}
-                  value={lo}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const clamped = Math.min(val, hi - 1);
-                    setDurationFilterMin(clamped <= durationRange.minMins ? null : clamped);
-                  }}
-                  className="dual-range-input"
-                />
-                <input
-                  type="range"
-                  min={durationRange.minMins}
-                  max={durationRange.maxMins}
-                  step={1}
-                  value={hi}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    const clamped = Math.max(val, lo + 1);
-                    setDurationFilterMax(clamped >= durationRange.maxMins ? null : clamped);
-                  }}
-                  className="dual-range-input"
-                />
-              </div>
-            );
-          })()}
-          <div className="flex justify-between mt-1">
-            <span className="text-[10px] text-gray-500">{durationRange.minMins}m</span>
-            <span className="text-[10px] text-gray-500">{durationRange.maxMins >= 60 ? `${Math.floor(durationRange.maxMins / 60)}h ${durationRange.maxMins % 60}m` : `${durationRange.maxMins}m`}</span>
-          </div>
         </div>
 
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Date range</label>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400 whitespace-nowrap w-[52px] flex-shrink-0">Date</label>
           <button
             ref={dateButtonRef}
             type="button"
             onClick={() => setIsDateOpen((open) => !open)}
-            className="input w-full text-xs h-8 px-3 py-1.5 flex items-center justify-between gap-2"
+            className="input flex-1 text-xs h-8 px-3 py-1.5 flex items-center justify-between gap-2"
           >
             <span
               className={
@@ -942,12 +1022,12 @@ ${points}
           )}
         </div>
 
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Drone</label>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400 whitespace-nowrap w-[52px] flex-shrink-0">Drone</label>
           <Select
             value={selectedDrone}
             onChange={setSelectedDrone}
-            className="text-xs h-8"
+            className="text-xs h-8 flex-1 min-w-0"
             options={[
               { value: '', label: 'All drones' },
               ...droneOptions.map((option) => ({ value: option.key, label: option.label })),
@@ -955,12 +1035,12 @@ ${points}
           />
         </div>
 
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Battery serial</label>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-400 whitespace-nowrap w-[52px] flex-shrink-0">Battery</label>
           <Select
             value={selectedBattery}
             onChange={setSelectedBattery}
-            className="text-xs h-8"
+            className="text-xs h-8 flex-1 min-w-0"
             options={[
               { value: '', label: 'All batteries' },
               ...batteryOptions.map((serial) => ({ value: serial, label: getBatteryDisplayName(serial) })),
@@ -970,15 +1050,15 @@ ${points}
 
         {/* Tag filter */}
         {allTags.length > 0 && (
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Tags</label>
-            <div className="relative">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-400 whitespace-nowrap w-[52px] flex-shrink-0">Tags</label>
+            <div className="relative flex-1 min-w-0">
               <button
                 type="button"
                 onClick={() => setIsTagDropdownOpen((v) => !v)}
                 className="input w-full text-xs h-8 px-3 py-1.5 flex items-center justify-between gap-2"
               >
-                <span className={selectedTags.length > 0 ? 'text-gray-100 truncate' : 'text-gray-400'}>
+                <span className={`truncate ${selectedTags.length > 0 ? 'text-gray-100' : 'text-gray-400'}`}>
                   {selectedTags.length > 0 ? selectedTags.join(', ') : 'All tags'}
                 </span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><polyline points="6 9 12 15 18 9"/></svg>
@@ -989,13 +1069,47 @@ ${points}
                     className="fixed inset-0 z-40"
                     onClick={() => { setIsTagDropdownOpen(false); setTagSearch(''); }}
                   />
-                  <div className="absolute left-0 top-full mt-1 z-50 w-full max-h-56 rounded-lg border border-gray-700 bg-dji-surface shadow-xl flex flex-col">
+                  <div
+                    ref={tagDropdownRef}
+                    className="absolute left-0 right-0 top-full mt-1 z-50 max-h-56 rounded-lg border border-gray-700 bg-dji-surface shadow-xl flex flex-col overflow-hidden"
+                  >
                     {/* Search input */}
                     <div className="px-2 pt-2 pb-1 border-b border-gray-700 flex-shrink-0">
                       <input
                         type="text"
                         value={tagSearch}
-                        onChange={(e) => setTagSearch(e.target.value)}
+                        onChange={(e) => { setTagSearch(e.target.value); setTagHighlightedIndex(0); }}
+                        onKeyDown={(e) => {
+                          const filtered = allTags.filter((tag) => tag.toLowerCase().includes(tagSearch.toLowerCase()));
+                          const sorted = [...filtered].sort((a, b) => {
+                            const aSelected = selectedTags.includes(a);
+                            const bSelected = selectedTags.includes(b);
+                            if (aSelected && !bSelected) return -1;
+                            if (!aSelected && bSelected) return 1;
+                            return a.localeCompare(b);
+                          });
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setTagHighlightedIndex(prev => prev < sorted.length - 1 ? prev + 1 : 0);
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setTagHighlightedIndex(prev => prev > 0 ? prev - 1 : sorted.length - 1);
+                          } else if (e.key === 'Enter' && sorted.length > 0) {
+                            e.preventDefault();
+                            const tag = sorted[tagHighlightedIndex];
+                            if (tag) {
+                              setSelectedTags((prev) =>
+                                prev.includes(tag)
+                                  ? prev.filter((t) => t !== tag)
+                                  : [...prev, tag]
+                              );
+                            }
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setIsTagDropdownOpen(false);
+                            setTagSearch('');
+                          }
+                        }}
                         placeholder="Search tags…"
                         autoFocus
                         className="w-full bg-dji-dark text-xs text-gray-200 rounded px-2 py-1 border border-gray-600 focus:border-dji-primary focus:outline-none placeholder-gray-500"
@@ -1007,7 +1121,15 @@ ${points}
                       if (filtered.length === 0) {
                         return <p className="text-xs text-gray-500 px-3 py-2">No matching tags</p>;
                       }
-                      return filtered.map((tag) => {
+                      // Sort: selected tags first, then unselected alphabetically
+                      const sorted = [...filtered].sort((a, b) => {
+                        const aSelected = selectedTags.includes(a);
+                        const bSelected = selectedTags.includes(b);
+                        if (aSelected && !bSelected) return -1;
+                        if (!aSelected && bSelected) return 1;
+                        return a.localeCompare(b);
+                      });
+                      return sorted.map((tag, index) => {
                       const isSelected = selectedTags.includes(tag);
                       return (
                         <button
@@ -1020,11 +1142,12 @@ ${points}
                                 : [...prev, tag]
                             );
                           }}
+                          onMouseEnter={() => setTagHighlightedIndex(index)}
                           className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
                             isSelected
                               ? 'bg-violet-500/20 text-violet-200'
                               : 'text-gray-300 hover:bg-gray-700/50'
-                          }`}
+                          } ${index === tagHighlightedIndex && !isSelected ? 'bg-gray-700/50' : ''}`}
                         >
                           <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
                             isSelected ? 'border-violet-500 bg-violet-500' : 'border-gray-600'
@@ -1103,21 +1226,51 @@ ${points}
                   className="fixed inset-0 z-40" 
                   onClick={() => setIsExportDropdownOpen(false)} 
                 />
-                <div className="themed-select-dropdown absolute left-0 top-full mt-2 w-full border border-gray-700 rounded-lg shadow-xl z-50">
+                <div
+                  ref={exportDropdownRef}
+                  tabIndex={-1}
+                  onKeyDown={(e) => {
+                    const exportOptions = [
+                      { id: 'csv', label: 'CSV', ext: 'csv' },
+                      { id: 'json', label: 'JSON', ext: 'json' },
+                      { id: 'gpx', label: 'GPX', ext: 'gpx' },
+                      { id: 'kml', label: 'KML', ext: 'kml' },
+                    ];
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setExportHighlightedIndex(prev => prev < exportOptions.length - 1 ? prev + 1 : 0);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setExportHighlightedIndex(prev => prev > 0 ? prev - 1 : exportOptions.length - 1);
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const opt = exportOptions[exportHighlightedIndex];
+                      setIsExportDropdownOpen(false);
+                      handleBulkExport(opt.id, opt.ext);
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setIsExportDropdownOpen(false);
+                    }
+                  }}
+                  className="themed-select-dropdown absolute left-0 top-full mt-2 w-full border border-gray-700 rounded-lg shadow-xl z-50 outline-none"
+                >
                   <div className="p-2">
                     {[
                       { id: 'csv', label: 'CSV', ext: 'csv' },
                       { id: 'json', label: 'JSON', ext: 'json' },
                       { id: 'gpx', label: 'GPX', ext: 'gpx' },
                       { id: 'kml', label: 'KML', ext: 'kml' },
-                    ].map(opt => (
+                    ].map((opt, index) => (
                       <button
                         key={opt.id}
                         onClick={() => {
                           setIsExportDropdownOpen(false);
                           handleBulkExport(opt.id, opt.ext);
                         }}
-                        className="themed-select-option w-full text-left px-3 py-2 text-sm rounded transition-colors"
+                        onMouseEnter={() => setExportHighlightedIndex(index)}
+                        className={`themed-select-option w-full text-left px-3 py-2 text-sm rounded transition-colors ${
+                          index === exportHighlightedIndex ? 'bg-dji-primary/20' : ''
+                        }`}
                       >
                         {opt.label}
                       </button>
@@ -1211,8 +1364,28 @@ ${points}
                   className="fixed inset-0 z-40"
                   onClick={() => setIsSortOpen(false)}
                 />
-                <div className="themed-select-dropdown absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-700 p-1 shadow-xl">
-                  {sortOptions.map((option) => (
+                <div
+                  ref={sortDropdownRef}
+                  tabIndex={-1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setSortHighlightedIndex(prev => prev < sortOptions.length - 1 ? prev + 1 : 0);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setSortHighlightedIndex(prev => prev > 0 ? prev - 1 : sortOptions.length - 1);
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setSortOption(sortOptions[sortHighlightedIndex].value as typeof sortOption);
+                      setIsSortOpen(false);
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setIsSortOpen(false);
+                    }
+                  }}
+                  className="themed-select-dropdown absolute right-0 z-50 mt-2 w-56 rounded-xl border border-gray-700 p-1 shadow-xl outline-none"
+                >
+                  {sortOptions.map((option, index) => (
                     <button
                       key={option.value}
                       type="button"
@@ -1220,11 +1393,10 @@ ${points}
                         setSortOption(option.value as typeof sortOption);
                         setIsSortOpen(false);
                       }}
+                      onMouseEnter={() => setSortHighlightedIndex(index)}
                       className={`themed-select-option w-full text-left px-3 py-2 text-xs rounded-lg transition-colors ${
-                        sortOption === option.value
-                          ? 'bg-dji-primary/20 font-medium'
-                          : ''
-                      }`}
+                        sortOption === option.value ? 'font-medium' : ''
+                      } ${index === sortHighlightedIndex ? 'bg-dji-primary/20' : ''}`}
                     >
                       {option.label}
                     </button>
@@ -1242,7 +1414,9 @@ ${points}
       {sortedFlights.map((flight) => (
         <div
           key={flight.id}
+          data-flight-id={flight.id}
           onClick={() => {
+            setPreviewFlightId(null);
             selectFlight(flight.id);
             onSelectFlight?.(flight.id);
           }}
@@ -1255,7 +1429,7 @@ ${points}
             }
           }}
           className={`w-full px-3 py-2 text-left cursor-pointer ${
-            selectedFlightId === flight.id
+            selectedFlightId === flight.id || previewFlightId === flight.id
               ? 'bg-dji-primary/20 border-l-2 border-dji-primary'
               : 'border-l-2 border-transparent'
           }`}

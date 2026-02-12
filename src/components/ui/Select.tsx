@@ -20,6 +20,7 @@ interface SelectProps {
 export function Select({ value, onChange, options, className = '' }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +29,7 @@ export function Select({ value, onChange, options, className = '' }: SelectProps
   const close = useCallback(() => {
     setIsOpen(false);
     setSearch('');
+    setHighlightedIndex(-1);
   }, []);
 
   // Filtered options based on search term
@@ -65,6 +67,9 @@ export function Select({ value, onChange, options, className = '' }: SelectProps
       // Small delay to let the DOM render
       requestAnimationFrame(() => {
         inputRef.current?.focus();
+        // Set initial highlighted index to current value
+        const currentIdx = filteredOptions.findIndex(o => o.value === value);
+        setHighlightedIndex(currentIdx >= 0 ? currentIdx : 0);
         if (listRef.current) {
           const active = listRef.current.querySelector('[data-active="true"]');
           if (active) active.scrollIntoView({ block: 'nearest' });
@@ -72,6 +77,52 @@ export function Select({ value, onChange, options, className = '' }: SelectProps
       });
     }
   }, [isOpen]);
+
+  // Reset highlighted index when filtered options change
+  useEffect(() => {
+    if (isOpen && filteredOptions.length > 0) {
+      setHighlightedIndex(0);
+    }
+  }, [filteredOptions.length, isOpen]);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (isOpen && highlightedIndex >= 0 && listRef.current) {
+      const items = listRef.current.querySelectorAll('[data-option]');
+      const item = items[highlightedIndex];
+      if (item) item.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex, isOpen]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!isOpen) return;
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setHighlightedIndex(prev => 
+          prev < filteredOptions.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setHighlightedIndex(prev => 
+          prev > 0 ? prev - 1 : filteredOptions.length - 1
+        );
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (highlightedIndex >= 0 && filteredOptions[highlightedIndex]) {
+          onChange(filteredOptions[highlightedIndex].value);
+          close();
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        close();
+        break;
+    }
+  }, [isOpen, highlightedIndex, filteredOptions, onChange, close]);
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -102,12 +153,7 @@ export function Select({ value, onChange, options, className = '' }: SelectProps
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && filteredOptions.length > 0) {
-                  onChange(filteredOptions[0].value);
-                  close();
-                }
-              }}
+              onKeyDown={handleKeyDown}
               placeholder="Type to filter…"
               className="w-full bg-transparent text-sm text-gray-200 placeholder-gray-500 outline-none"
             />
@@ -117,16 +163,19 @@ export function Select({ value, onChange, options, className = '' }: SelectProps
             {filteredOptions.length === 0 ? (
               <div className="px-3 py-2 text-xs text-gray-500 italic">No matches</div>
             ) : (
-              filteredOptions.map((opt) => (
+              filteredOptions.map((opt, index) => (
                 <div
                   key={opt.value}
+                  data-option
                   data-active={opt.value === value}
                   onClick={() => {
                     onChange(opt.value);
                     close();
                   }}
+                  onMouseEnter={() => setHighlightedIndex(index)}
                   className={`themed-select-option cursor-pointer px-3 py-1.5 text-sm truncate
-                    ${opt.value === value ? 'font-medium' : ''}`}
+                    ${opt.value === value ? 'font-medium' : ''}
+                    ${index === highlightedIndex ? 'bg-dji-primary/20' : ''}`}
                 >
                   {opt.label}
                 </div>
