@@ -85,6 +85,10 @@ interface FlightState {
   hideSerialNumbers: boolean;
   setHideSerialNumbers: (hide: boolean) => void;
   getDisplaySerial: (serial: string) => string;
+
+  // Overview map highlighted flight (single-click preview in overview mode)
+  overviewHighlightedFlightId: number | null;
+  setOverviewHighlightedFlightId: (flightId: number | null) => void;
 }
 
 export const useFlightStore = create<FlightState>((set, get) => ({
@@ -148,6 +152,10 @@ export const useFlightStore = create<FlightState>((set, get) => ({
     typeof localStorage !== 'undefined'
       ? localStorage.getItem('hideSerialNumbers') === 'true'
       : false,
+
+  // Overview map highlighted flight (single-click preview in overview mode)
+  overviewHighlightedFlightId: null,
+  setOverviewHighlightedFlightId: (flightId) => set({ overviewHighlightedFlightId: flightId }),
 
   // Load all flights from database
   loadFlights: async () => {

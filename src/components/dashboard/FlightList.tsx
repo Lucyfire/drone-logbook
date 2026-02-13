@@ -19,7 +19,75 @@ import type { FlightDataResponse, Flight, TelemetryData } from '@/types';
 import { addToBlacklist } from './FlightImporter';
 import 'react-day-picker/dist/style.css';
 
-export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: number) => void } = {}) {
+/**
+ * Custom smooth scroll with easing for a more polished feel
+ */
+function smoothScrollToElement(
+  element: HTMLElement,
+  duration: number = 800,
+  offset: number = 0
+): Promise<void> {
+  return new Promise((resolve) => {
+    const scrollContainer = element.closest('.overflow-auto') || document.documentElement;
+    const isDocScroll = scrollContainer === document.documentElement;
+    
+    const elementRect = element.getBoundingClientRect();
+    const containerRect = isDocScroll 
+      ? { top: 0, height: window.innerHeight }
+      : (scrollContainer as HTMLElement).getBoundingClientRect();
+    
+    // Calculate target position to center the element
+    const elementCenter = elementRect.top + elementRect.height / 2;
+    const containerCenter = containerRect.top + containerRect.height / 2;
+    const scrollOffset = elementCenter - containerCenter + offset;
+    
+    const startScroll = isDocScroll 
+      ? window.scrollY 
+      : (scrollContainer as HTMLElement).scrollTop;
+    const targetScroll = startScroll + scrollOffset;
+    
+    const startTime = performance.now();
+    
+    // Ease-in-out cubic for smooth acceleration and deceleration
+    const easeInOutCubic = (t: number): number => {
+      return t < 0.5 
+        ? 4 * t * t * t 
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    };
+    
+    const animateScroll = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const easedProgress = easeInOutCubic(progress);
+      
+      const currentScroll = startScroll + (targetScroll - startScroll) * easedProgress;
+      
+      if (isDocScroll) {
+        window.scrollTo(0, currentScroll);
+      } else {
+        (scrollContainer as HTMLElement).scrollTop = currentScroll;
+      }
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      } else {
+        resolve();
+      }
+    };
+    
+    requestAnimationFrame(animateScroll);
+  });
+}
+
+export function FlightList({ 
+  onSelectFlight,
+  onHighlightFlight,
+  activeView = 'flights',
+}: { 
+  onSelectFlight?: (flightId: number) => void;
+  onHighlightFlight?: (flightId: number | null) => void;
+  activeView?: 'flights' | 'overview';
+} = {}) {
   const {
     flights,
     selectedFlightId,
@@ -36,6 +104,8 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
     setMapAreaFilterEnabled,
     clearSelection,
     getDisplaySerial,
+    overviewHighlightedFlightId,
+    setOverviewHighlightedFlightId,
   } =
     useFlightStore();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -457,7 +527,7 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
         if (sortedFlights.length === 0) return;
         
         // Use previewFlightId if set (during navigation), otherwise use selectedFlightId
-        const currentId = previewFlightId ?? selectedFlightId;
+        const currentId = previewFlightId ?? (activeView === 'overview' ? overviewHighlightedFlightId : selectedFlightId);
         const currentIndex = currentId 
           ? sortedFlights.findIndex(f => f.id === currentId)
           : -1;
@@ -471,21 +541,42 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
         
         const nextFlight = sortedFlights[nextIndex];
         if (nextFlight) {
-          // Update preview for visual feedback (does not load flight data)
-          setPreviewFlightId(nextFlight.id);
+          if (activeView === 'overview') {
+            // In overview mode, arrow keys only highlight in the list (no map scroll yet)
+            setOverviewHighlightedFlightId(nextFlight.id);
+          } else {
+            // In flights mode, arrow keys update preview
+            setPreviewFlightId(nextFlight.id);
+          }
           
-          // Scroll the item into view
+          // Scroll the item into view in the flight list
           const flightElement = document.querySelector(`[data-flight-id="${nextFlight.id}"]`);
           flightElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
       }
       
-      // Enter key selects and loads the previewed flight
-      if (event.key === 'Enter' && previewFlightId !== null) {
+      // Enter key selects and loads the previewed/highlighted flight
+      if (event.key === 'Enter') {
         event.preventDefault();
-        selectFlight(previewFlightId);
-        onSelectFlight?.(previewFlightId);
-        setPreviewFlightId(null);
+        const targetFlightId = previewFlightId ?? (activeView === 'overview' ? overviewHighlightedFlightId : null);
+        if (targetFlightId !== null) {
+          if (activeView === 'overview') {
+            // In overview mode, Enter scrolls to map and shows the flight
+            const mapElement = document.getElementById('overview-cluster-map');
+            if (mapElement) {
+              smoothScrollToElement(mapElement, 800).then(() => {
+                onHighlightFlight?.(targetFlightId);
+              });
+            } else {
+              onHighlightFlight?.(targetFlightId);
+            }
+          } else {
+            // In flights mode, Enter loads the flight
+            selectFlight(targetFlightId);
+            onSelectFlight?.(targetFlightId);
+            setPreviewFlightId(null);
+          }
+        }
       }
     };
 
@@ -493,7 +584,7 @@ export function FlightList({ onSelectFlight }: { onSelectFlight?: (flightId: num
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [sortedFlights, selectedFlightId, previewFlightId, selectFlight, onSelectFlight, isDateOpen, isSortOpen, isTagDropdownOpen, isExportDropdownOpen, editingId]);
+  }, [sortedFlights, selectedFlightId, previewFlightId, overviewHighlightedFlightId, activeView, selectFlight, onSelectFlight, onHighlightFlight, setOverviewHighlightedFlightId, isDateOpen, isSortOpen, isTagDropdownOpen, isExportDropdownOpen, editingId]);
 
   const sortOptions = useMemo(
     () => [
@@ -1877,19 +1968,49 @@ ${points}
           data-flight-id={flight.id}
           onClick={() => {
             setPreviewFlightId(null);
-            selectFlight(flight.id);
-            onSelectFlight?.(flight.id);
+            if (activeView === 'overview') {
+              // Single click in overview mode: scroll to map then highlight
+              const mapElement = document.getElementById('overview-cluster-map');
+              if (mapElement) {
+                smoothScrollToElement(mapElement, 800).then(() => {
+                  setOverviewHighlightedFlightId(flight.id);
+                  onHighlightFlight?.(flight.id);
+                });
+              } else {
+                setOverviewHighlightedFlightId(flight.id);
+                onHighlightFlight?.(flight.id);
+              }
+            } else {
+              // Single click in flights mode: select and load flight
+              selectFlight(flight.id);
+              onSelectFlight?.(flight.id);
+            }
+          }}
+          onDoubleClick={() => {
+            if (activeView === 'overview') {
+              // Double click in overview mode: navigate to flight details
+              setOverviewHighlightedFlightId(null);
+              selectFlight(flight.id);
+              onSelectFlight?.(flight.id);
+            }
+            // In flights mode, double-click does nothing extra (single click already loads)
           }}
           role="button"
           tabIndex={0}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
+              if (activeView === 'overview') {
+                // Enter in overview mode: navigate to flight details
+                setOverviewHighlightedFlightId(null);
+              }
               selectFlight(flight.id);
               onSelectFlight?.(flight.id);
             }
           }}
           className={`w-full px-3 py-2 text-left cursor-pointer ${
-            selectedFlightId === flight.id || previewFlightId === flight.id
+            (activeView === 'overview' 
+              ? overviewHighlightedFlightId === flight.id
+              : (selectedFlightId === flight.id || previewFlightId === flight.id))
               ? 'bg-dji-primary/20 border-l-2 border-dji-primary'
               : 'border-l-2 border-transparent'
           }`}

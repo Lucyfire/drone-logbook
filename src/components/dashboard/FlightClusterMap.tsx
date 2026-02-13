@@ -128,6 +128,7 @@ interface FlightClusterMapProps {
   unitSystem: UnitSystem;
   themeMode: 'system' | 'dark' | 'light';
   onSelectFlight?: (flightId: number) => void;
+  highlightedFlightId?: number | null;  // Flight to highlight on the map
 }
 
 export function FlightClusterMap({
@@ -136,6 +137,7 @@ export function FlightClusterMap({
   unitSystem,
   themeMode,
   onSelectFlight,
+  highlightedFlightId,
 }: FlightClusterMapProps) {
   const mapRef = useRef<MapRef | null>(null);
   const hasFittedRef = useRef(false);
@@ -145,6 +147,51 @@ export function FlightClusterMap({
     latitude: number;
     flight: Flight;
   } | null>(null);
+
+  // Pulsing animation state for highlighted flight
+  const [pulseRadius, setPulseRadius] = useState(16);
+  const [pulseOpacity, setPulseOpacity] = useState(0.2);
+  const pulseAnimationRef = useRef<number | null>(null);
+
+  // Animate the pulse effect
+  useEffect(() => {
+    if (!highlightedFlightId) {
+      // Clean up animation when highlight is removed
+      if (pulseAnimationRef.current) {
+        cancelAnimationFrame(pulseAnimationRef.current);
+        pulseAnimationRef.current = null;
+      }
+      return;
+    }
+
+    let startTime: number | null = null;
+    const duration = 1500; // 1.5 second cycle
+
+    const animate = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      const progress = (elapsed % duration) / duration;
+      
+      // Ease in-out sine wave for smooth pulsing
+      const easedProgress = Math.sin(progress * Math.PI * 2) * 0.5 + 0.5;
+      
+      // Pulse radius between 16 and 28
+      setPulseRadius(16 + easedProgress * 12);
+      // Pulse opacity between 0.1 and 0.35
+      setPulseOpacity(0.1 + easedProgress * 0.25);
+      
+      pulseAnimationRef.current = requestAnimationFrame(animate);
+    };
+
+    pulseAnimationRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (pulseAnimationRef.current) {
+        cancelAnimationFrame(pulseAnimationRef.current);
+        pulseAnimationRef.current = null;
+      }
+    };
+  }, [highlightedFlightId]);
 
   // Map area filter state from store
   const mapAreaFilterEnabled = useFlightStore((s) => s.mapAreaFilterEnabled);
@@ -274,6 +321,30 @@ export function FlightClusterMap({
     };
   }, [flights]);
 
+  // GeoJSON for highlighted flight (separate source for distinct styling)
+  const highlightedGeojson = useMemo(() => {
+    if (!highlightedFlightId) {
+      return { type: 'FeatureCollection' as const, features: [] };
+    }
+    const flight = flights.find((f) => f.id === highlightedFlightId);
+    if (!flight || flight.homeLat == null || flight.homeLon == null) {
+      return { type: 'FeatureCollection' as const, features: [] };
+    }
+    return {
+      type: 'FeatureCollection' as const,
+      features: [{
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [flight.homeLon, flight.homeLat],
+        },
+        properties: {
+          id: flight.id,
+        },
+      }],
+    };
+  }, [highlightedFlightId, flights]);
+
   // Fit bounds to all points on first render / when flights change
   useEffect(() => {
     if (hasFittedRef.current) return;
@@ -307,6 +378,23 @@ export function FlightClusterMap({
 
     return () => clearTimeout(timeout);
   }, [geojson]);
+
+  // Zoom to highlighted flight when it changes
+  useEffect(() => {
+    if (!highlightedFlightId) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const highlightedFlight = flights.find((f) => f.id === highlightedFlightId);
+    if (!highlightedFlight || highlightedFlight.homeLat == null || highlightedFlight.homeLon == null) return;
+
+    // Fly to the highlighted flight location
+    map.flyTo({
+      center: [highlightedFlight.homeLon, highlightedFlight.homeLat],
+      zoom: 12,
+      duration: 800,
+    });
+  }, [highlightedFlightId, flights]);
 
   // Click handler — zoom into clusters or show popup for individual points
   const handleClick = useCallback(
@@ -455,6 +543,41 @@ export function FlightClusterMap({
             <Layer {...clusterCountLayer} />
             <Layer {...unclusteredPointLayer} />
           </Source>
+
+          {/* Highlighted flight marker (shown above other markers) */}
+          {highlightedFlightId && highlightedGeojson.features.length > 0 && (
+            <Source
+              id="highlighted-flight"
+              type="geojson"
+              data={highlightedGeojson}
+            >
+              {/* Animated pulsing glow ring */}
+              <Layer
+                id="highlighted-flight-glow"
+                type="circle"
+                source="highlighted-flight"
+                paint={{
+                  'circle-color': '#10b981',
+                  'circle-radius': pulseRadius,
+                  'circle-stroke-width': 0,
+                  'circle-opacity': pulseOpacity,
+                }}
+              />
+              {/* Main marker dot */}
+              <Layer
+                id="highlighted-flight-outer"
+                type="circle"
+                source="highlighted-flight"
+                paint={{
+                  'circle-color': '#10b981',
+                  'circle-radius': 10,
+                  'circle-stroke-width': 2,
+                  'circle-stroke-color': '#ffffff',
+                  'circle-opacity': 0.95,
+                }}
+              />
+            </Source>
+          )}
 
           {/* Popup for individual flights */}
           {popupInfo && (() => {

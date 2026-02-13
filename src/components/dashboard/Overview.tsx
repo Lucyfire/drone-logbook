@@ -48,6 +48,7 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
   const droneNameMap = useFlightStore((state) => state.droneNameMap);
   const sidebarFilteredFlightIds = useFlightStore((state) => state.sidebarFilteredFlightIds);
   const getDisplaySerial = useFlightStore((state) => state.getDisplaySerial);
+  const overviewHighlightedFlightId = useFlightStore((state) => state.overviewHighlightedFlightId);
   const resolvedTheme = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
 
   // Use sidebar-filtered flights (fall back to all flights if no filter set yet)
@@ -299,13 +300,16 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
       </div>
 
       {/* Flight Locations Cluster Map */}
-      <FlightClusterMap
-        flights={filteredFlights}
-        allFlights={flights}
-        unitSystem={unitSystem}
-        themeMode={themeMode}
-        onSelectFlight={onSelectFlight}
-      />
+      <div id="overview-cluster-map">
+        <FlightClusterMap
+          flights={filteredFlights}
+          allFlights={flights}
+          unitSystem={unitSystem}
+          themeMode={themeMode}
+          onSelectFlight={onSelectFlight}
+          highlightedFlightId={overviewHighlightedFlightId}
+        />
+      </div>
 
       {/* Battery Health & Top Flights Row */}
         <div className="grid grid-cols-2 gap-4">

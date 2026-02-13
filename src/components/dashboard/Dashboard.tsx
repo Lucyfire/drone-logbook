@@ -199,7 +199,11 @@ export function Dashboard() {
         <div className="px-4 py-2 border-b border-gray-700">
           <div className="flex gap-2">
             <button
-              onClick={() => setActiveView('flights')}
+              onClick={() => {
+                setActiveView('flights');
+                // Clear highlighted flight when switching to flights view
+                useFlightStore.getState().setOverviewHighlightedFlightId(null);
+              }}
               className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
                 activeView === 'flights'
                   ? 'bg-dji-primary/20 border-dji-primary text-white'
@@ -300,10 +304,19 @@ export function Dashboard() {
 
         {/* Flight List */}
         <div className="flex-1 min-h-0 flex flex-col">
-          <FlightList onSelectFlight={(flightId) => {
-            setActiveView('flights');
-            useFlightStore.getState().selectFlight(flightId);
-          }} />
+          <FlightList 
+            activeView={activeView}
+            onSelectFlight={(flightId) => {
+              // Clear the overview highlight when navigating to a flight
+              useFlightStore.getState().setOverviewHighlightedFlightId(null);
+              setActiveView('flights');
+              useFlightStore.getState().selectFlight(flightId);
+            }}
+            onHighlightFlight={() => {
+              // This callback is called when a flight is highlighted in overview mode
+              // The store is already updated by FlightList, so no additional action needed here
+            }}
+          />
         </div>
 
         {/* Flight Count */}
@@ -341,7 +354,15 @@ export function Dashboard() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+      <main 
+        className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+        onClick={() => {
+          // Clear overview highlight when clicking outside the flight list
+          if (activeView === 'overview') {
+            useFlightStore.getState().setOverviewHighlightedFlightId(null);
+          }
+        }}
+      >
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
