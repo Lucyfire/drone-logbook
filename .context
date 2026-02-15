@@ -1,7 +1,7 @@
 {
   "project": {
     "name": "Drone Logbook",
-    "goal": "Local-first drone logbook with charts, maps, and analytics. Available as a Tauri v2 desktop app or a Docker-deployable web app.",
+    "goal": "Local-first drone logbook with charts, maps, and analytics. Supports DJI and Litchi CSV formats. Available as a Tauri v2 desktop app or a Docker-deployable web app.",
     "stack": {
       "desktop": "Tauri v2 (feature: tauri-app)",
       "web": "Axum 0.7 + Nginx (feature: web)",
@@ -80,6 +80,8 @@
   "scope": {
     "features": [
       "Import and parse DJI flight logs (bulk import with cooldown).",
+      "Import Litchi CSV exports with automatic unit detection (metric/imperial) and 'Litchi' auto-tag.",
+      "Flight deduplication: prevents importing same flight from different export versions (signature: drone_serial + battery_serial + start_time within 60s). One-time startup cleanup for existing duplicates.",
       "Local DuckDB storage with telemetry schema, WAL recovery, and migration support.",
       "Overview analytics page (totals, averages, max altitude, max distance from home).",
       "Overview activity heatmap (365-day, 7x52 grid) with date range selector.",
@@ -165,6 +167,7 @@
         "src-tauri/src/server.rs",
         "src-tauri/src/database.rs",
         "src-tauri/src/parser.rs",
+        "src-tauri/src/litchi_parser.rs",
         "src-tauri/src/models.rs",
         "src-tauri/src/api.rs",
         "src-tauri/src/lib.rs"
@@ -217,6 +220,16 @@
     ]
   },
   "recent_changes": {
+    "litchi_csv_and_deduplication": {
+      "description": "Added Litchi CSV import support and flight deduplication to prevent duplicate imports from different export versions.",
+      "litchi_parser": "litchi_parser.rs: New module for parsing Litchi CSV exports. Auto-detects units from column headers (feet/meters, mph/m/s). Maps numeric drone type codes to model names. Flights auto-tagged with 'Litchi'.",
+      "format_detection": "parser.rs: parse_log() detects file format (DJI vs Litchi CSV via LitchiParser::is_litchi_csv()) and routes to appropriate parser.",
+      "deduplication": "database.rs: is_duplicate_flight() checks for existing flight with same drone_serial + battery_serial + start_time (within 60s window). deduplicate_flights() removes duplicates keeping flight with most telemetry points.",
+      "startup_dedup": "database.rs: run_startup_deduplication() runs one-time cleanup on first launch after update. Uses settings table with 'duplicate_checked' flag to avoid re-running.",
+      "settings_table": "database.rs: New settings table (key/value store) for app flags. get_setting() and set_setting() methods.",
+      "import_flow": "main.rs + server.rs: After parsing, checks is_duplicate_flight() before inserting. Returns 'Duplicate flight' error message if match found.",
+      "frontend": "FlightImporter.tsx: Tracks duplicate flights separately in batch import progress. Completion message shows 'X skipped (duplicate flight)'. api.ts: deduplicateFlights() function for manual cleanup."
+    },
     "docker_web_mode": {
       "description": "Added Docker/web deployment mode using Cargo feature flags.",
       "server": "src-tauri/src/server.rs - Axum REST API with all 11 endpoints mirroring Tauri commands. DefaultBodyLimit set to 250MB for large flight log uploads.",
@@ -422,6 +435,11 @@
         "serial_number",
         "encryption_key",
         "fetched_at"
+      ],
+      "settings": [
+        "key",
+        "value",
+        "updated_at"
       ]
     },
     "notes": [
@@ -455,13 +473,14 @@
       "GET    /api/settings/smart_tags - Check if smart tags are enabled",
       "POST   /api/settings/smart_tags - Set smart tags enabled (JSON: enabled)",
       "POST   /api/regenerate_smart_tags - Regenerate auto tags for all flights",
+      "POST   /api/flights/deduplicate    - Remove duplicate flights from database (one-time cleanup)",
       "GET    /api/backup             - Download compressed database backup (tar.gz of Parquet files)",
       "POST   /api/backup/restore     - Upload and restore a backup file (multipart)"
     ]
   },
   "parser": {
-    "version": "dji-log-parser v0.5.7",
-    "inputs": "DJI .dat/.txt logs",
+    "version": "dji-log-parser v0.5.7 + custom Litchi CSV parser",
+    "inputs": "DJI .dat/.txt logs, Litchi CSV exports",
     "outputs": [
       "Flight metadata (aircraft name, drone model/serial, battery serial, start/end, duration)",
       "Telemetry arrays (time, position, orientation, battery, RC, GPS)"
@@ -474,10 +493,14 @@
       "GPS coordinates outside +/-90 lat / +/-180 lon are treated as out-of-range and excluded.",
       "Altitude/height values >10km and speed >100 m/s are clamped to None.",
       "V13+ logs require keychain decryption; API key fetched from config or default.",
-      "File deduplication via SHA256 hash prevents re-importing the same log.",
+      "File deduplication via SHA256 hash prevents re-importing the same log file.",
+      "Flight deduplication via signature (drone_serial + battery_serial + start_time within 60s) prevents importing same flight from different export versions.",
+      "One-time startup deduplication runs on first launch after update to clean existing duplicates; controlled by settings.duplicate_checked flag.",
       "Parsing runs in spawn_blocking with catch_unwind and 40s timeout for crash safety.",
       "Smart tags generated from FlightStats: night detection (local hour via lon-based TZ offset), speed, battery, altitude, distance, duration thresholds.",
-      "Offline reverse geocoding via reverse_geocoder crate (bundled GeoNames dataset ~15MB). Returns city name, country (from CC lookup table), and continent."
+      "Offline reverse geocoding via reverse_geocoder crate (bundled GeoNames dataset ~15MB). Returns city name, country (from CC lookup table), and continent.",
+      "Litchi CSV parser auto-detects units from column headers (feet/meters, mph/m/s) and converts to metric. Litchi flights auto-tagged with 'Litchi' tag.",
+      "Litchi drone types mapped from numeric codes (e.g., 62=DJI Mini 3 Pro, 63=DJI Mini 2, 69=DJI Mini 4 Pro, 77=DJI Air 3)."
     ]
   },
   "commands": {
