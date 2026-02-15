@@ -12,6 +12,7 @@
 
 mod api;
 mod database;
+mod litchi_parser;
 mod models;
 mod parser;
 

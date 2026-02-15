@@ -23,6 +23,7 @@ use dji_log_parser::DJILog;
 
 use crate::api::DjiApi;
 use crate::database::Database;
+use crate::litchi_parser::LitchiParser;
 use crate::models::{FlightMetadata, FlightStats, TelemetryPoint};
 
 /// Maximum time allowed for parsing a single log file (seconds)
@@ -53,6 +54,9 @@ pub enum ParserError {
 
     #[error("Parsing timed out after {0} seconds — file may be corrupt or unsupported")]
     Timeout(u64),
+
+    #[error("Incompatible file format — only DJI flight logs (.txt) and Litchi CSV exports are supported")]
+    IncompatibleFile,
 }
 
 /// Result of parsing a DJI log file
@@ -94,7 +98,7 @@ impl<'a> LogParser<'a> {
         Ok(format!("{:x}", hasher.finalize()))
     }
 
-    /// Parse a DJI log file and extract all telemetry data
+    /// Parse a flight log file (DJI .txt or Litchi .csv) and extract all telemetry data
     pub async fn parse_log(&self, file_path: &Path) -> Result<ParseResult, ParserError> {
         let parse_start = std::time::Instant::now();
         let file_size = fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
@@ -115,6 +119,20 @@ impl<'a> LogParser<'a> {
         {
             log::info!("File already imported (hash match), skipping");
             return Err(ParserError::AlreadyImported);
+        }
+
+        // Detect file format and route to appropriate parser
+        if LitchiParser::is_litchi_csv(file_path) {
+            log::info!("Detected Litchi CSV format, using LitchiParser");
+            let litchi_parser = LitchiParser::new(self.db);
+            return litchi_parser.parse(file_path, &file_hash);
+        }
+
+        // Check if this looks like a valid DJI log file
+        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !ext.eq_ignore_ascii_case("txt") {
+            log::warn!("Unsupported file extension: .{}", ext);
+            return Err(ParserError::IncompatibleFile);
         }
 
         // Read the file

@@ -211,7 +211,7 @@ export function FlightImporter() {
           if (result.message.toLowerCase().includes('already been imported')) {
             skipped += 1;
           } else {
-            // Parse errors, corrupt files, non-DJI files, timeouts, etc.
+            // Parse errors, corrupt files, incompatible formats, timeouts, etc.
             invalidFiles += 1;
           }
         } else {
@@ -245,10 +245,8 @@ export function FlightImporter() {
       if (processed > 0) parts.push(`${processed} file${processed === 1 ? '' : 's'} processed`);
       if (skipped > 0) parts.push(`${skipped} skipped (already imported)`);
       if (blacklisted > 0) parts.push(`${blacklisted} skipped (blacklisted)`);
-      if (invalidFiles > 0) parts.push(`${invalidFiles} skipped (non-DJI files)`);
+      if (invalidFiles > 0) parts.push(`${invalidFiles} skipped (incompatible file)`);
       setBatchMessage(`Import finished. ${parts.join(', ')}.`);
-      
-    } else {
       // Standard path with cooldown (default API key)
       // Refresh flight list after each successful import (during cooldown)
       let skipped = 0;
@@ -281,7 +279,7 @@ export function FlightImporter() {
           if (result.message.toLowerCase().includes('already been imported')) {
             skipped += 1;
           } else {
-            // Parse errors, corrupt files, non-DJI files, timeouts, etc.
+            // Parse errors, corrupt files, incompatible formats, timeouts, etc.
             // Only show alert for manual imports, silently skip for sync
             invalidFiles += 1;
             if (isManualImport) {
@@ -323,7 +321,7 @@ export function FlightImporter() {
       if (processed > 0) parts.push(`${processed} file${processed === 1 ? '' : 's'} processed`);
       if (skipped > 0) parts.push(`${skipped} skipped (already imported)`);
       if (blacklisted > 0) parts.push(`${blacklisted} skipped (blacklisted)`);
-      if (invalidFiles > 0) parts.push(`${invalidFiles} skipped (non-DJI files)`);
+      if (invalidFiles > 0) parts.push(`${invalidFiles} skipped (incompatible file)`);
       setBatchMessage(`Import finished. ${parts.join(', ')}.`);
     }
   };
