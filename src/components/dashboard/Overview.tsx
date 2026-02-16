@@ -50,6 +50,10 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
   const getDisplaySerial = useFlightStore((state) => state.getDisplaySerial);
   const overviewHighlightedFlightId = useFlightStore((state) => state.overviewHighlightedFlightId);
   const setHeatmapDateFilter = useFlightStore((state) => state.setHeatmapDateFilter);
+  const maintenanceThresholds = useFlightStore((state) => state.maintenanceThresholds);
+  const maintenanceLastReset = useFlightStore((state) => state.maintenanceLastReset);
+  const setMaintenanceThreshold = useFlightStore((state) => state.setMaintenanceThreshold);
+  const performMaintenance = useFlightStore((state) => state.performMaintenance);
   const resolvedTheme = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
 
   // Use sidebar-filtered flights (fall back to all flights if no filter set yet)
@@ -401,6 +405,20 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
           </div>
         </div>
         </div>
+
+      {/* Maintenance Section */}
+      <MaintenanceSection
+        batteries={filteredStats.batteriesUsed}
+        drones={filteredStats.dronesUsed}
+        flights={filteredFlights}
+        isLight={resolvedTheme === 'light'}
+        getBatteryDisplayName={getBatteryDisplayName}
+        getDroneDisplayName={getDroneDisplayName}
+        maintenanceThresholds={maintenanceThresholds}
+        maintenanceLastReset={maintenanceLastReset}
+        setMaintenanceThreshold={setMaintenanceThreshold}
+        performMaintenance={performMaintenance}
+      />
       </div>
   );
 }
@@ -1375,6 +1393,939 @@ function BatteryHealthList({
         <p className="text-xs text-gray-500">No battery usage points available.</p>
       )}
     </div>
+  );
+}
+
+interface MaintenanceSectionProps {
+  batteries: { batterySerial: string; flightCount: number; totalDurationSecs: number }[];
+  drones: { droneModel: string; droneSerial: string | null; aircraftName: string | null; flightCount: number; totalDurationSecs: number; displayLabel: string }[];
+  flights: Flight[];
+  isLight: boolean;
+  getBatteryDisplayName: (serial: string) => string;
+  getDroneDisplayName: (serial: string, fallbackName: string) => string;
+  maintenanceThresholds: {
+    battery: { flights: number; airtime: number };
+    aircraft: { flights: number; airtime: number };
+  };
+  maintenanceLastReset: {
+    battery: Record<string, string>;
+    aircraft: Record<string, string>;
+  };
+  setMaintenanceThreshold: (type: 'battery' | 'aircraft', field: 'flights' | 'airtime', value: number) => void;
+  performMaintenance: (type: 'battery' | 'aircraft', serial: string, date?: Date) => void;
+}
+
+function MaintenanceSection({
+  batteries,
+  drones,
+  flights,
+  isLight,
+  getBatteryDisplayName,
+  getDroneDisplayName,
+  maintenanceThresholds,
+  maintenanceLastReset,
+  setMaintenanceThreshold,
+  performMaintenance,
+}: MaintenanceSectionProps) {
+  const [selectedBatteries, setSelectedBatteries] = useState<string[]>([]);
+  const [selectedAircrafts, setSelectedAircrafts] = useState<string[]>([]);
+  const [isBatteryDropdownOpen, setIsBatteryDropdownOpen] = useState(false);
+  const [isAircraftDropdownOpen, setIsAircraftDropdownOpen] = useState(false);
+  const [batteryFlightThreshold, setBatteryFlightThreshold] = useState(String(maintenanceThresholds.battery.flights));
+  const [batteryAirtimeThreshold, setBatteryAirtimeThreshold] = useState(String(maintenanceThresholds.battery.airtime));
+  const [aircraftFlightThreshold, setAircraftFlightThreshold] = useState(String(maintenanceThresholds.aircraft.flights));
+  const [aircraftAirtimeThreshold, setAircraftAirtimeThreshold] = useState(String(maintenanceThresholds.aircraft.airtime));
+  
+  // Maintenance date state for each battery/aircraft (keyed by serial)
+  const [batteryMaintenanceDates, setBatteryMaintenanceDates] = useState<Record<string, Date>>({});
+  const [aircraftMaintenanceDates, setAircraftMaintenanceDates] = useState<Record<string, Date>>({});
+  
+  // Date picker open state (keyed by serial)
+  const [openBatteryDatePicker, setOpenBatteryDatePicker] = useState<string | null>(null);
+  const [openAircraftDatePicker, setOpenAircraftDatePicker] = useState<string | null>(null);
+
+  // Today's date for blocking future dates
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  // Get or initialize maintenance date for a battery (defaults to today)
+  const getBatteryMaintenanceDate = (serial: string): Date => {
+    return batteryMaintenanceDates[serial] || new Date();
+  };
+
+  // Get or initialize maintenance date for an aircraft (defaults to today)
+  const getAircraftMaintenanceDate = (serial: string): Date => {
+    return aircraftMaintenanceDates[serial] || new Date();
+  };
+
+  // Set maintenance date for a battery
+  const setBatteryMaintenanceDate = (serial: string, date: Date | undefined) => {
+    if (date) {
+      setBatteryMaintenanceDates(prev => ({ ...prev, [serial]: date }));
+    }
+  };
+
+  // Set maintenance date for an aircraft
+  const setAircraftMaintenanceDate = (serial: string, date: Date | undefined) => {
+    if (date) {
+      setAircraftMaintenanceDates(prev => ({ ...prev, [serial]: date }));
+    }
+  };
+
+  // Format date for display
+  const formatDateDisplay = (date: Date): string => {
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  // Handle battery maintenance performed
+  const handleBatteryMaintenance = (serial: string) => {
+    const date = getBatteryMaintenanceDate(serial);
+    // Set time to end of day to include flights from that day
+    const maintenanceDate = new Date(date);
+    maintenanceDate.setHours(23, 59, 59, 999);
+    performMaintenance('battery', serial, maintenanceDate);
+    // Reset date to today after performing maintenance
+    setBatteryMaintenanceDates(prev => {
+      const updated = { ...prev };
+      delete updated[serial];
+      return updated;
+    });
+  };
+
+  // Handle aircraft maintenance performed
+  const handleAircraftMaintenance = (serial: string) => {
+    const date = getAircraftMaintenanceDate(serial);
+    // Set time to end of day to include flights from that day
+    const maintenanceDate = new Date(date);
+    maintenanceDate.setHours(23, 59, 59, 999);
+    performMaintenance('aircraft', serial, maintenanceDate);
+    // Reset date to today after performing maintenance
+    setAircraftMaintenanceDates(prev => {
+      const updated = { ...prev };
+      delete updated[serial];
+      return updated;
+    });
+  };
+
+  // Initialize selected items when data becomes available
+  useEffect(() => {
+    if (batteries.length > 0 && selectedBatteries.length === 0) {
+      setSelectedBatteries([batteries[0].batterySerial]);
+    }
+  }, [batteries, selectedBatteries.length]);
+
+  useEffect(() => {
+    if (drones.length > 0 && selectedAircrafts.length === 0) {
+      const firstWithSerial = drones.find(d => d.droneSerial);
+      if (firstWithSerial?.droneSerial) {
+        setSelectedAircrafts([firstWithSerial.droneSerial]);
+      }
+    }
+  }, [drones, selectedAircrafts.length]);
+
+  // Sync local state with store when thresholds change externally
+  useEffect(() => {
+    setBatteryFlightThreshold(String(maintenanceThresholds.battery.flights));
+    setBatteryAirtimeThreshold(String(maintenanceThresholds.battery.airtime));
+    setAircraftFlightThreshold(String(maintenanceThresholds.aircraft.flights));
+    setAircraftAirtimeThreshold(String(maintenanceThresholds.aircraft.airtime));
+  }, [maintenanceThresholds]);
+
+  // Calculate maintenance progress for a battery
+  const getBatteryProgress = (batterySerial: string) => {
+    const lastResetTime = maintenanceLastReset.battery[batterySerial];
+    const lastResetDate = lastResetTime ? new Date(lastResetTime) : null;
+    
+    // Filter flights for this battery since last maintenance
+    const batteryFlights = flights.filter(f => {
+      if (f.batterySerial !== batterySerial) return false;
+      if (!lastResetDate) return true;
+      if (!f.startTime) return true;
+      return new Date(f.startTime) > lastResetDate;
+    });
+
+    const flightsSinceMaintenance = batteryFlights.length;
+    const airtimeSinceMaintenance = batteryFlights.reduce((sum, f) => sum + (f.durationSecs ?? 0), 0) / 3600; // in hours
+
+    return {
+      flights: flightsSinceMaintenance,
+      airtime: airtimeSinceMaintenance,
+      lastReset: lastResetDate,
+    };
+  };
+
+  // Calculate maintenance progress for an aircraft
+  const getAircraftProgress = (droneSerial: string) => {
+    const lastResetTime = maintenanceLastReset.aircraft[droneSerial];
+    const lastResetDate = lastResetTime ? new Date(lastResetTime) : null;
+    
+    // Filter flights for this aircraft since last maintenance
+    const aircraftFlights = flights.filter(f => {
+      if (f.droneSerial !== droneSerial) return false;
+      if (!lastResetDate) return true;
+      if (!f.startTime) return true;
+      return new Date(f.startTime) > lastResetDate;
+    });
+
+    const flightsSinceMaintenance = aircraftFlights.length;
+    const airtimeSinceMaintenance = aircraftFlights.reduce((sum, f) => sum + (f.durationSecs ?? 0), 0) / 3600; // in hours
+
+    return {
+      flights: flightsSinceMaintenance,
+      airtime: airtimeSinceMaintenance,
+      lastReset: lastResetDate,
+    };
+  };
+
+  const handleApplyBatteryThresholds = () => {
+    const flights = parseInt(batteryFlightThreshold, 10);
+    const airtime = parseFloat(batteryAirtimeThreshold);
+    if (!isNaN(flights) && flights > 0) {
+      setMaintenanceThreshold('battery', 'flights', flights);
+    }
+    if (!isNaN(airtime) && airtime > 0) {
+      setMaintenanceThreshold('battery', 'airtime', airtime);
+    }
+  };
+
+  const handleApplyAircraftThresholds = () => {
+    const flights = parseInt(aircraftFlightThreshold, 10);
+    const airtime = parseFloat(aircraftAirtimeThreshold);
+    if (!isNaN(flights) && flights > 0) {
+      setMaintenanceThreshold('aircraft', 'flights', flights);
+    }
+    if (!isNaN(airtime) && airtime > 0) {
+      setMaintenanceThreshold('aircraft', 'airtime', airtime);
+    }
+  };
+
+  const getProgressBarColor = (percent: number) => {
+    if (percent >= 90) return '#ef4444'; // red
+    if (percent >= 75) return '#f97316'; // orange
+    if (percent >= 60) return '#eab308'; // yellow
+    return '#10b981'; // green
+  };
+
+  const getProgressTextColor = (percent: number) => {
+    if (percent >= 90) return 'text-red-400';
+    if (percent >= 75) return 'text-orange-400';
+    if (percent >= 60) return 'text-yellow-400';
+    return 'text-green-400';
+  };
+
+  const formatLastReset = (date: Date | null) => {
+    if (!date) return 'Never';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Get all batteries for progress display, sorted by combined progress (flights % + airtime %)
+  const batteryProgressList = batteries.map(b => {
+    const progress = getBatteryProgress(b.batterySerial);
+    const flightPercent = Math.min((progress.flights / maintenanceThresholds.battery.flights) * 100, 100);
+    const airtimePercent = Math.min((progress.airtime / maintenanceThresholds.battery.airtime) * 100, 100);
+    return {
+      serial: b.batterySerial,
+      displayName: getBatteryDisplayName(b.batterySerial),
+      ...progress,
+      combinedProgress: flightPercent + airtimePercent,
+    };
+  }).sort((a, b) => b.combinedProgress - a.combinedProgress);
+
+  // Get all aircrafts for progress display, sorted by combined progress (flights % + airtime %)
+  const aircraftProgressList = drones
+    .filter(d => d.droneSerial)
+    .map(d => {
+      const progress = getAircraftProgress(d.droneSerial!);
+      const flightPercent = Math.min((progress.flights / maintenanceThresholds.aircraft.flights) * 100, 100);
+      const airtimePercent = Math.min((progress.airtime / maintenanceThresholds.aircraft.airtime) * 100, 100);
+      return {
+        serial: d.droneSerial!,
+        displayName: getDroneDisplayName(d.droneSerial!, d.aircraftName || d.droneModel),
+        ...progress,
+        combinedProgress: flightPercent + airtimePercent,
+      };
+    }).sort((a, b) => b.combinedProgress - a.combinedProgress);
+
+  const cardBg = isLight ? 'bg-white border-gray-200' : 'bg-drone-surface border-gray-700/50';
+  const textPrimary = isLight ? 'text-gray-900' : 'text-white';
+  const textSecondary = isLight ? 'text-gray-600' : 'text-gray-400';
+  const textMuted = isLight ? 'text-gray-500' : 'text-gray-500';
+  const inputBg = isLight ? 'bg-gray-100 border-gray-300' : 'bg-gray-800 border-gray-600';
+  const progressBg = isLight ? 'bg-gray-200' : 'bg-gray-700/50';
+  const dropdownBg = isLight ? 'bg-white border-gray-300' : 'bg-drone-surface border-gray-700';
+  const dropdownItemHover = isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-700/50';
+
+  // Toggle battery selection
+  const toggleBatterySelection = (serial: string) => {
+    setSelectedBatteries(prev => 
+      prev.includes(serial) 
+        ? prev.filter(s => s !== serial) 
+        : [...prev, serial]
+    );
+  };
+
+  // Toggle aircraft selection
+  const toggleAircraftSelection = (serial: string) => {
+    setSelectedAircrafts(prev => 
+      prev.includes(serial) 
+        ? prev.filter(s => s !== serial) 
+        : [...prev, serial]
+    );
+  };
+
+  return (
+    <div className={`card p-5 border ${cardBg}`}>
+      <div className="flex items-center gap-2 mb-5">
+        <MaintenanceIcon />
+        <h3 className={`text-base font-semibold ${textPrimary}`}>Maintenance</h3>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Battery Maintenance */}
+        <div className={`p-4 rounded-lg border ${isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700/50'}`}>
+          <div className="flex items-center gap-2 mb-4">
+            <BatteryIcon />
+            <h4 className={`text-sm font-semibold ${textPrimary}`}>Battery Maintenance</h4>
+          </div>
+
+          {/* Threshold Inputs */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className={`block text-xs ${textMuted} mb-1.5`}>Flight Threshold</label>
+              <input
+                type="number"
+                value={batteryFlightThreshold}
+                onChange={(e) => setBatteryFlightThreshold(e.target.value)}
+                className={`w-full h-8 px-2 text-xs rounded border ${inputBg} ${textPrimary} focus:outline-none focus:ring-1 focus:ring-drone-primary`}
+                min="1"
+              />
+            </div>
+            <div>
+              <label className={`block text-xs ${textMuted} mb-1.5`}>Airtime Threshold (hrs)</label>
+              <input
+                type="number"
+                value={batteryAirtimeThreshold}
+                onChange={(e) => setBatteryAirtimeThreshold(e.target.value)}
+                className={`w-full h-8 px-2 text-xs rounded border ${inputBg} ${textPrimary} focus:outline-none focus:ring-1 focus:ring-drone-primary`}
+                min="0.1"
+                step="0.5"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleApplyBatteryThresholds}
+            className="w-full h-7 text-xs font-medium rounded bg-drone-primary/20 text-drone-primary hover:bg-drone-primary/30 transition-colors mb-4"
+          >
+            Apply Thresholds
+          </button>
+
+          {/* All Batteries Progress Summary */}
+          {batteryProgressList.length > 0 && (
+            <div className="mb-4">
+              <h5 className={`text-xs font-medium ${textSecondary} mb-3`}>All Batteries</h5>
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                {batteryProgressList.map((b) => {
+                  const flightPercent = Math.min((b.flights / maintenanceThresholds.battery.flights) * 100, 100);
+                  const airtimePercent = Math.min((b.airtime / maintenanceThresholds.battery.airtime) * 100, 100);
+                  const isSelected = selectedBatteries.includes(b.serial);
+
+                  return (
+                    <div 
+                      key={b.serial}
+                      onClick={() => toggleBatterySelection(b.serial)}
+                      className={`p-2.5 rounded cursor-pointer transition-colors ${
+                        isSelected 
+                          ? (isLight ? 'bg-green-100 ring-1 ring-green-300' : 'bg-green-500/20 ring-1 ring-green-500/50')
+                          : (isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-700/30')
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                            isSelected 
+                              ? (isLight ? 'border-green-500 bg-green-500' : 'border-green-400 bg-green-500') 
+                              : (isLight ? 'border-gray-400' : 'border-gray-600')
+                          }`}>
+                            {isSelected && (
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                            )}
+                          </span>
+                          <span className={`text-xs ${textPrimary} truncate font-medium`}>{b.displayName}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-[10px] ${textMuted}`}>Flights</span>
+                            <span className={`text-[10px] ${getProgressTextColor(flightPercent)}`}>
+                              {b.flights}/{maintenanceThresholds.battery.flights}
+                            </span>
+                          </div>
+                          <div className={`relative h-1.5 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${flightPercent}%`,
+                                backgroundColor: getProgressBarColor(flightPercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-[10px] ${textMuted}`}>Airtime</span>
+                            <span className={`text-[10px] ${getProgressTextColor(airtimePercent)}`}>
+                              {b.airtime.toFixed(1)}/{maintenanceThresholds.battery.airtime}h
+                            </span>
+                          </div>
+                          <div className={`relative h-1.5 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${airtimePercent}%`,
+                                backgroundColor: getProgressBarColor(airtimePercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Individual Battery Section */}
+          <div className={`pt-4 border-t ${isLight ? 'border-gray-200' : 'border-gray-600/30'}`}>
+            <h5 className={`text-xs font-medium ${textSecondary} mb-3`}>Selected Battery Details</h5>
+            
+            {/* Battery Multi-Select Dropdown */}
+            <div className="relative mb-3">
+              <button
+                type="button"
+                onClick={() => setIsBatteryDropdownOpen(v => !v)}
+                className={`w-full h-8 px-3 text-xs rounded-lg border flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-drone-primary ${
+                  isLight 
+                    ? 'bg-white border-gray-300 text-gray-900' 
+                    : 'bg-drone-surface border-gray-600 text-gray-100'
+                }`}
+              >
+                <span className={`truncate ${selectedBatteries.length > 0 ? '' : (isLight ? 'text-gray-500' : 'text-gray-400')}`}>
+                  {selectedBatteries.length > 0
+                    ? selectedBatteries.map(s => getBatteryDisplayName(s)).join(', ')
+                    : 'Select batteries'}
+                </span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {isBatteryDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsBatteryDropdownOpen(false)}
+                  />
+                  <div className={`absolute left-0 right-0 top-full mt-1 z-50 max-h-48 rounded-lg border shadow-xl flex flex-col overflow-hidden ${dropdownBg}`}>
+                    <div className="overflow-auto flex-1">
+                      {batteries.map((b) => {
+                        const isSelected = selectedBatteries.includes(b.batterySerial);
+                        return (
+                          <button
+                            key={b.batterySerial}
+                            type="button"
+                            onClick={() => toggleBatterySelection(b.batterySerial)}
+                            className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
+                              isSelected 
+                                ? (isLight ? 'bg-green-100 text-green-800' : 'bg-green-500/20 text-green-200') 
+                                : (isLight ? 'text-gray-700' : 'text-gray-300')
+                            } ${dropdownItemHover}`}
+                          >
+                            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                              isSelected 
+                                ? (isLight ? 'border-green-500 bg-green-500' : 'border-green-400 bg-green-500')
+                                : (isLight ? 'border-gray-400' : 'border-gray-600')
+                            }`}>
+                              {isSelected && (
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                              )}
+                            </span>
+                            <span className="truncate">{getBatteryDisplayName(b.batterySerial)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {selectedBatteries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedBatteries([]); setIsBatteryDropdownOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-t ${
+                          isLight ? 'text-gray-500 hover:text-gray-700 border-gray-200' : 'text-gray-400 hover:text-white border-gray-700'
+                        }`}
+                      >
+                        Clear selection
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Progress Bars for Selected Batteries */}
+            {selectedBatteries.length > 0 && (
+              <div className="space-y-4">
+                {selectedBatteries.map(serial => {
+                  const progress = getBatteryProgress(serial);
+                  const flightPercent = Math.min((progress.flights / maintenanceThresholds.battery.flights) * 100, 100);
+                  const airtimePercent = Math.min((progress.airtime / maintenanceThresholds.battery.airtime) * 100, 100);
+                  const displayName = getBatteryDisplayName(serial);
+
+                  return (
+                    <div key={serial} className={`p-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-gray-700/30'}`}>
+                      <div className={`text-xs font-medium ${textPrimary} mb-2`}>{displayName}</div>
+                      <div className="grid grid-cols-2 gap-3 mb-2">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-xs ${textSecondary}`}>Flights</span>
+                            <span className={`text-xs ${getProgressTextColor(flightPercent)}`}>
+                              {progress.flights} / {maintenanceThresholds.battery.flights}
+                            </span>
+                          </div>
+                          <div className={`relative h-2 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${flightPercent}%`,
+                                backgroundColor: getProgressBarColor(flightPercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-xs ${textSecondary}`}>Airtime</span>
+                            <span className={`text-xs ${getProgressTextColor(airtimePercent)}`}>
+                              {progress.airtime.toFixed(1)} / {maintenanceThresholds.battery.airtime} hrs
+                            </span>
+                          </div>
+                          <div className={`relative h-2 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${airtimePercent}%`,
+                                backgroundColor: getProgressBarColor(airtimePercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] ${textMuted}`}>
+                          Last maintenance: {formatLastReset(progress.lastReset)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2 h-9">
+                        <div className="relative w-[40%]">
+                          <button
+                            type="button"
+                            onClick={() => setOpenBatteryDatePicker(openBatteryDatePicker === serial ? null : serial)}
+                            className={`w-full h-9 px-3 text-xs rounded-lg border flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-drone-primary ${
+                              isLight 
+                                ? 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50' 
+                                : 'bg-drone-surface border-gray-600 text-gray-100 hover:bg-gray-700/30'
+                            }`}
+                          >
+                            <span className="truncate text-[11px]">{formatDateDisplay(getBatteryMaintenanceDate(serial))}</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 opacity-60"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                          </button>
+                          {openBatteryDatePicker === serial && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setOpenBatteryDatePicker(null)}
+                              />
+                              <div
+                                className={`absolute left-0 bottom-full mb-1 z-50 rounded-xl border p-3 shadow-xl ${
+                                  isLight 
+                                    ? 'bg-white border-gray-200' 
+                                    : 'bg-drone-surface border-gray-700'
+                                }`}
+                              >
+                                <DayPicker
+                                  mode="single"
+                                  selected={getBatteryMaintenanceDate(serial)}
+                                  onSelect={(date) => {
+                                    setBatteryMaintenanceDate(serial, date);
+                                    setOpenBatteryDatePicker(null);
+                                  }}
+                                  disabled={{ after: today }}
+                                  defaultMonth={getBatteryMaintenanceDate(serial)}
+                                  weekStartsOn={1}
+                                  className={`rdp-theme ${isLight ? 'rdp-light' : 'rdp-dark'}`}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleBatteryMaintenance(serial)}
+                          className={`flex-1 h-9 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
+                            isLight 
+                              ? 'border-green-500 text-green-600 hover:bg-green-50' 
+                              : 'border-green-500/50 text-green-400 hover:bg-green-500/10'
+                          }`}
+                        >
+                          ✓ Maintenance Done
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Aircraft Maintenance */}
+        <div className={`p-4 rounded-lg border ${isLight ? 'bg-gray-50 border-gray-200' : 'bg-gray-800/30 border-gray-700/50'}`}>
+          <div className="flex items-center gap-2 mb-4">
+            <AircraftIcon />
+            <h4 className={`text-sm font-semibold ${textPrimary}`}>Aircraft Maintenance</h4>
+          </div>
+
+          {/* Threshold Inputs */}
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className={`block text-xs ${textMuted} mb-1.5`}>Flight Threshold</label>
+              <input
+                type="number"
+                value={aircraftFlightThreshold}
+                onChange={(e) => setAircraftFlightThreshold(e.target.value)}
+                className={`w-full h-8 px-2 text-xs rounded border ${inputBg} ${textPrimary} focus:outline-none focus:ring-1 focus:ring-drone-primary`}
+                min="1"
+              />
+            </div>
+            <div>
+              <label className={`block text-xs ${textMuted} mb-1.5`}>Airtime Threshold (hrs)</label>
+              <input
+                type="number"
+                value={aircraftAirtimeThreshold}
+                onChange={(e) => setAircraftAirtimeThreshold(e.target.value)}
+                className={`w-full h-8 px-2 text-xs rounded border ${inputBg} ${textPrimary} focus:outline-none focus:ring-1 focus:ring-drone-primary`}
+                min="0.1"
+                step="0.5"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleApplyAircraftThresholds}
+            className="w-full h-7 text-xs font-medium rounded bg-drone-primary/20 text-drone-primary hover:bg-drone-primary/30 transition-colors mb-4"
+          >
+            Apply Thresholds
+          </button>
+
+          {/* All Aircraft Progress Summary */}
+          {aircraftProgressList.length > 0 && (
+            <div className="mb-4">
+              <h5 className={`text-xs font-medium ${textSecondary} mb-3`}>All Aircraft</h5>
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                {aircraftProgressList.map((a) => {
+                  const flightPercent = Math.min((a.flights / maintenanceThresholds.aircraft.flights) * 100, 100);
+                  const airtimePercent = Math.min((a.airtime / maintenanceThresholds.aircraft.airtime) * 100, 100);
+                  const isSelected = selectedAircrafts.includes(a.serial);
+
+                  return (
+                    <div 
+                      key={a.serial}
+                      onClick={() => toggleAircraftSelection(a.serial)}
+                      className={`p-2.5 rounded cursor-pointer transition-colors ${
+                        isSelected 
+                          ? (isLight ? 'bg-sky-100 ring-1 ring-sky-300' : 'bg-sky-500/20 ring-1 ring-sky-500/50')
+                          : (isLight ? 'hover:bg-gray-100' : 'hover:bg-gray-700/30')
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                            isSelected 
+                              ? (isLight ? 'border-sky-500 bg-sky-500' : 'border-sky-400 bg-sky-500') 
+                              : (isLight ? 'border-gray-400' : 'border-gray-600')
+                          }`}>
+                            {isSelected && (
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                            )}
+                          </span>
+                          <span className={`text-xs ${textPrimary} truncate font-medium`}>{a.displayName}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-[10px] ${textMuted}`}>Flights</span>
+                            <span className={`text-[10px] ${getProgressTextColor(flightPercent)}`}>
+                              {a.flights}/{maintenanceThresholds.aircraft.flights}
+                            </span>
+                          </div>
+                          <div className={`relative h-1.5 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${flightPercent}%`,
+                                backgroundColor: getProgressBarColor(flightPercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-[10px] ${textMuted}`}>Airtime</span>
+                            <span className={`text-[10px] ${getProgressTextColor(airtimePercent)}`}>
+                              {a.airtime.toFixed(1)}/{maintenanceThresholds.aircraft.airtime}h
+                            </span>
+                          </div>
+                          <div className={`relative h-1.5 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${airtimePercent}%`,
+                                backgroundColor: getProgressBarColor(airtimePercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Individual Aircraft Section */}
+          <div className={`pt-4 border-t ${isLight ? 'border-gray-200' : 'border-gray-600/30'}`}>
+            <h5 className={`text-xs font-medium ${textSecondary} mb-3`}>Selected Aircraft Details</h5>
+            
+            {/* Aircraft Multi-Select Dropdown */}
+            <div className="relative mb-3">
+              <button
+                type="button"
+                onClick={() => setIsAircraftDropdownOpen(v => !v)}
+                className={`w-full h-8 px-3 text-xs rounded-lg border flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-drone-primary ${
+                  isLight 
+                    ? 'bg-white border-gray-300 text-gray-900' 
+                    : 'bg-drone-surface border-gray-600 text-gray-100'
+                }`}
+              >
+                <span className={`truncate ${selectedAircrafts.length > 0 ? '' : (isLight ? 'text-gray-500' : 'text-gray-400')}`}>
+                  {selectedAircrafts.length > 0
+                    ? selectedAircrafts.map(s => {
+                        const drone = drones.find(d => d.droneSerial === s);
+                        return drone ? getDroneDisplayName(s, drone.aircraftName || drone.droneModel) : s;
+                      }).join(', ')
+                    : 'Select aircraft'}
+                </span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {isAircraftDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsAircraftDropdownOpen(false)}
+                  />
+                  <div className={`absolute left-0 right-0 top-full mt-1 z-50 max-h-48 rounded-lg border shadow-xl flex flex-col overflow-hidden ${dropdownBg}`}>
+                    <div className="overflow-auto flex-1">
+                      {drones.filter(d => d.droneSerial).map((d) => {
+                        const isSelected = selectedAircrafts.includes(d.droneSerial!);
+                        const displayName = getDroneDisplayName(d.droneSerial!, d.aircraftName || d.droneModel);
+                        return (
+                          <button
+                            key={d.droneSerial}
+                            type="button"
+                            onClick={() => toggleAircraftSelection(d.droneSerial!)}
+                            className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${
+                              isSelected 
+                                ? (isLight ? 'bg-sky-100 text-sky-800' : 'bg-sky-500/20 text-sky-200') 
+                                : (isLight ? 'text-gray-700' : 'text-gray-300')
+                            } ${dropdownItemHover}`}
+                          >
+                            <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
+                              isSelected 
+                                ? (isLight ? 'border-sky-500 bg-sky-500' : 'border-sky-400 bg-sky-500')
+                                : (isLight ? 'border-gray-400' : 'border-gray-600')
+                            }`}>
+                              {isSelected && (
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                              )}
+                            </span>
+                            <span className="truncate">{displayName}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {selectedAircrafts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedAircrafts([]); setIsAircraftDropdownOpen(false); }}
+                        className={`w-full text-left px-3 py-1.5 text-xs border-t ${
+                          isLight ? 'text-gray-500 hover:text-gray-700 border-gray-200' : 'text-gray-400 hover:text-white border-gray-700'
+                        }`}
+                      >
+                        Clear selection
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Progress Bars for Selected Aircraft */}
+            {selectedAircrafts.length > 0 && (
+              <div className="space-y-4">
+                {selectedAircrafts.map(serial => {
+                  const progress = getAircraftProgress(serial);
+                  const flightPercent = Math.min((progress.flights / maintenanceThresholds.aircraft.flights) * 100, 100);
+                  const airtimePercent = Math.min((progress.airtime / maintenanceThresholds.aircraft.airtime) * 100, 100);
+                  const drone = drones.find(d => d.droneSerial === serial);
+                  const displayName = drone ? getDroneDisplayName(serial, drone.aircraftName || drone.droneModel) : serial;
+
+                  return (
+                    <div key={serial} className={`p-3 rounded-lg ${isLight ? 'bg-gray-100' : 'bg-gray-700/30'}`}>
+                      <div className={`text-xs font-medium ${textPrimary} mb-2`}>{displayName}</div>
+                      <div className="grid grid-cols-2 gap-3 mb-2">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-xs ${textSecondary}`}>Flights</span>
+                            <span className={`text-xs ${getProgressTextColor(flightPercent)}`}>
+                              {progress.flights} / {maintenanceThresholds.aircraft.flights}
+                            </span>
+                          </div>
+                          <div className={`relative h-2 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${flightPercent}%`,
+                                backgroundColor: getProgressBarColor(flightPercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`text-xs ${textSecondary}`}>Airtime</span>
+                            <span className={`text-xs ${getProgressTextColor(airtimePercent)}`}>
+                              {progress.airtime.toFixed(1)} / {maintenanceThresholds.aircraft.airtime} hrs
+                            </span>
+                          </div>
+                          <div className={`relative h-2 ${progressBg} rounded-full overflow-hidden`}>
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${airtimePercent}%`,
+                                backgroundColor: getProgressBarColor(airtimePercent),
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] ${textMuted}`}>
+                          Last maintenance: {formatLastReset(progress.lastReset)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2 h-9">
+                        <div className="relative w-[40%]">
+                          <button
+                            type="button"
+                            onClick={() => setOpenAircraftDatePicker(openAircraftDatePicker === serial ? null : serial)}
+                            className={`w-full h-9 px-3 text-xs rounded-lg border flex items-center justify-between gap-2 focus:outline-none focus:ring-1 focus:ring-drone-primary ${
+                              isLight 
+                                ? 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50' 
+                                : 'bg-drone-surface border-gray-600 text-gray-100 hover:bg-gray-700/30'
+                            }`}
+                          >
+                            <span className="truncate text-[11px]">{formatDateDisplay(getAircraftMaintenanceDate(serial))}</span>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 opacity-60"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                          </button>
+                          {openAircraftDatePicker === serial && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setOpenAircraftDatePicker(null)}
+                              />
+                              <div
+                                className={`absolute left-0 bottom-full mb-1 z-50 rounded-xl border p-3 shadow-xl ${
+                                  isLight 
+                                    ? 'bg-white border-gray-200' 
+                                    : 'bg-drone-surface border-gray-700'
+                                }`}
+                              >
+                                <DayPicker
+                                  mode="single"
+                                  selected={getAircraftMaintenanceDate(serial)}
+                                  onSelect={(date) => {
+                                    setAircraftMaintenanceDate(serial, date);
+                                    setOpenAircraftDatePicker(null);
+                                  }}
+                                  disabled={{ after: today }}
+                                  defaultMonth={getAircraftMaintenanceDate(serial)}
+                                  weekStartsOn={1}
+                                  className={`rdp-theme ${isLight ? 'rdp-light' : 'rdp-dark'}`}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleAircraftMaintenance(serial)}
+                          className={`flex-1 h-9 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
+                            isLight 
+                              ? 'border-green-500 text-green-600 hover:bg-green-50' 
+                              : 'border-green-500/50 text-green-400 hover:bg-green-500/10'
+                          }`}
+                        >
+                          ✓ Maintenance Done
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Icons
+// =============================================================================
+
+function MaintenanceIcon() {
+  return (
+    <svg className="w-5 h-5 text-drone-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function BatteryIcon() {
+  return (
+    <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <rect x="2" y="7" width="18" height="10" rx="2" strokeWidth={1.5} />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M22 10v4" />
+      <rect x="5" y="10" width="5" height="4" fill="currentColor" stroke="none" rx="0.5" />
+    </svg>
+  );
+}
+
+function AircraftIcon() {
+  return (
+    <svg className="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+    </svg>
   );
 }
 

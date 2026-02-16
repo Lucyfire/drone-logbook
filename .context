@@ -81,7 +81,7 @@
     "features": [
       "Import and parse DJI flight logs (bulk import with cooldown).",
       "Import Litchi CSV exports with automatic unit detection (metric/imperial) and 'Litchi' auto-tag.",
-      "Flight deduplication: prevents importing same flight from different export versions (signature: drone_serial + battery_serial + start_time within 60s). One-time startup cleanup for existing duplicates.",
+      "Flight deduplication: prevents importing same flight from different export versions (signature: drone_serial + battery_serial + exact start_time match). One-time startup cleanup for existing duplicates.",
       "Local DuckDB storage with telemetry schema, WAL recovery, and migration support.",
       "Overview analytics page (totals, averages, max altitude, max distance from home).",
       "Overview activity heatmap (365-day, 7x52 grid) with date range selector.",
@@ -89,6 +89,7 @@
       "Overview top 3 longest and furthest (distance-from-home) flights.",
       "Overview map area filter: toggle in sidebar filters flights to only those visible on the overview map. Map shows green glow border and 'Global filter active' title when enabled. Reset zoom button fits all flights.",
       "Battery health: per-serial health bars, inline rename (pencil icon, uniqueness-validated, persisted to localStorage), and per-minute usage history plot (scatter + smoothed line) with zoom slider and drag-to-zoom.",
+      "Maintenance tracking: Configurable flight and airtime thresholds for batteries and aircraft. Progress bars show usage since last maintenance with color-coded warnings (green <60%, yellow 60-74%, orange 75-89%, red 90%+). Record maintenance with date picker, resets counters for flights after that date. Multi-select for tracking multiple items.",
       "Flight list with rename (pencil icon), delete (trash icon), filters (date range, drone, battery, duration/altitude/distance range sliders, map area), search, and sorting.",
       "Flight list sidebar: collapsible Filters section (default collapsed) and Import section (auto-collapsed when flights exist, auto-expanded when empty).",
       "Overview uses sidebar-filtered flights via Zustand store (sidebarFilteredFlightIds) instead of its own filter bar.",
@@ -323,6 +324,24 @@
       "filter_layout": "FlightList.tsx: Inline filter layout with consistent 52px label width column. Duration slider row restructured with flex layout. Duration value display centered. Tag dropdown overflow fixed with left-0 right-0 positioning and overflow-hidden.",
       "tag_sorting": "FlightList.tsx: Tags in dropdown sorted with selected tags first, then alphabetically.",
       "auto_clear_selection": "FlightList.tsx: Selection automatically cleared when currently selected flight is not in filtered results or when filters return no results. Prevents stale cached data from showing on map/charts."
+    },
+    "maintenance_tracking": {
+      "description": "Maintenance tracking section in Overview for batteries and aircraft with configurable thresholds, progress bars, and date-based maintenance recording.",
+      "store": "flightStore.ts: Added maintenanceThresholds (battery/aircraft flights and airtime), maintenanceLastReset (per-serial ISO timestamps), setMaintenanceThreshold(), performMaintenance(type, serial, date?), getMaintenanceLastReset(). All persisted to localStorage.",
+      "component": "Overview.tsx: MaintenanceSection component with battery and aircraft columns. Threshold inputs with Apply buttons. All items list with clickable multi-select (checkboxes). Progress bars for flights and airtime since last maintenance.",
+      "progress_colors": "getProgressBarColor() and getProgressTextColor(): <60% green, 60-74% yellow, 75-89% orange, 90%+ red. Applied to both bar fill and text labels.",
+      "date_picker": "DayPicker (react-day-picker) for selecting maintenance date. Defaults to today, future dates disabled. Opens above button (bottom-full). Theme-responsive styling (light/dark).",
+      "multi_select": "Replaced native <select> with multi-select checkbox dropdowns matching FlightList filter panel style. bg-drone-surface, border-gray-700 in dark mode. Clear selection option.",
+      "layout": "40% width for date picker, 60% for Maintenance Done button. Row height h-9 (36px)."
+    },
+    "deduplication_exact_match": {
+      "description": "Changed flight deduplication from 60-second time window to exact timestamp match.",
+      "database": "database.rs: is_duplicate_flight() changed from 'ABS(EPOCH(...)) < 60' to exact 'start_time = ?::TIMESTAMPTZ' comparison. deduplicate_flights() bulk cleanup also uses exact match 'f1.start_time = f2.start_time'.",
+      "behavior": "Flights are only considered duplicates if drone_serial + battery_serial + start_time are all identical. No more time window tolerance."
+    },
+    "light_mode_contrast_fix": {
+      "description": "Fixed low contrast text in light mode for filter value labels.",
+      "flightlist": "FlightList.tsx: Duration/Altitude/Distance filter value spans ('Any', range values) now use isLight ? 'text-gray-700' : 'text-gray-200' for proper contrast. Added themeMode from store and isLight computed value."
     }
   },
   "behavior": {

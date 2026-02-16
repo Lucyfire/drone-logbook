@@ -1345,7 +1345,7 @@ impl Database {
         Ok(result)
     }
 
-    /// Check if a duplicate flight exists based on signature (drone_serial + battery_serial + start_time).
+    /// Check if a duplicate flight exists based on exact signature match (drone_serial + battery_serial + start_time).
     /// Returns the display_name of the matching flight if found, None otherwise.
     /// If any of the signature fields are None, returns None (can't reliably deduplicate).
     pub fn is_duplicate_flight(
@@ -1362,14 +1362,14 @@ impl Database {
 
         let conn = self.conn.lock().unwrap();
 
-        // Check for existing flight within 60-second window and return its display name
+        // Check for existing flight with exact same signature (drone, battery, start_time)
         let result: Option<String> = conn.query_row(
             r#"
             SELECT COALESCE(display_name, file_name) FROM flights 
             WHERE drone_serial = ?
               AND battery_serial = ?
               AND start_time IS NOT NULL
-              AND ABS(EPOCH(start_time) - EPOCH(?::TIMESTAMPTZ)) < 60
+              AND start_time = ?::TIMESTAMPTZ
             LIMIT 1
             "#,
             params![drone, battery, time.to_rfc3339()],
@@ -1379,7 +1379,7 @@ impl Database {
         Ok(result)
     }
 
-    /// Remove duplicate flights from the database based on signature (drone_serial + battery_serial + start_time).
+    /// Remove duplicate flights from the database based on exact signature match (drone_serial + battery_serial + start_time).
     /// Keeps the flight with the most telemetry points for each duplicate group.
     /// Returns the number of duplicates removed.
     pub fn deduplicate_flights(&self) -> Result<usize, DatabaseError> {
@@ -1414,7 +1414,7 @@ impl Database {
         total_removed += hash_duplicates;
         log::info!("Removed {} file_hash duplicates", hash_duplicates);
 
-        // Method 2: Remove signature-based duplicates (same drone + battery + start_time within 60 seconds)
+        // Method 2: Remove signature-based duplicates (same drone + battery + exact same start_time)
         // This catches re-imports of the same flight from different sources
         let signature_duplicates = conn.execute(
             r#"
@@ -1428,7 +1428,7 @@ impl Database {
                 JOIN flights f2 ON f1.drone_serial = f2.drone_serial
                     AND f1.battery_serial = f2.battery_serial
                     AND f1.id < f2.id
-                    AND ABS(EPOCH(f1.start_time) - EPOCH(f2.start_time)) < 60
+                    AND f1.start_time = f2.start_time
                 WHERE f1.drone_serial IS NOT NULL AND f1.drone_serial != ''
                   AND f1.battery_serial IS NOT NULL AND f1.battery_serial != ''
                   AND f1.start_time IS NOT NULL

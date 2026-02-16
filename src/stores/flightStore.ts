@@ -105,6 +105,19 @@ interface FlightState {
   // Overview map viewport persistence (session state)
   overviewMapViewport: { longitude: number; latitude: number; zoom: number } | null;
   setOverviewMapViewport: (viewport: { longitude: number; latitude: number; zoom: number } | null) => void;
+
+  // Maintenance tracking state
+  maintenanceThresholds: {
+    battery: { flights: number; airtime: number };  // airtime in hours
+    aircraft: { flights: number; airtime: number }; // airtime in hours
+  };
+  maintenanceLastReset: {
+    battery: Record<string, string>;  // batterySerial -> ISO timestamp
+    aircraft: Record<string, string>; // droneSerial -> ISO timestamp
+  };
+  setMaintenanceThreshold: (type: 'battery' | 'aircraft', field: 'flights' | 'airtime', value: number) => void;
+  performMaintenance: (type: 'battery' | 'aircraft', serial: string, date?: Date) => void;
+  getMaintenanceLastReset: (type: 'battery' | 'aircraft', serial: string) => string | null;
 }
 
 export const useFlightStore = create<FlightState>((set, get) => ({
@@ -183,6 +196,47 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   // Overview map viewport persistence (session state)
   overviewMapViewport: null,
   setOverviewMapViewport: (viewport) => set({ overviewMapViewport: viewport }),
+
+  // Maintenance tracking state
+  maintenanceThresholds: (() => {
+    if (typeof localStorage === 'undefined') return { battery: { flights: 100, airtime: 50 }, aircraft: { flights: 100, airtime: 50 } };
+    try {
+      const stored = localStorage.getItem('maintenanceThresholds');
+      return stored ? JSON.parse(stored) : { battery: { flights: 100, airtime: 50 }, aircraft: { flights: 100, airtime: 50 } };
+    } catch {
+      return { battery: { flights: 100, airtime: 50 }, aircraft: { flights: 100, airtime: 50 } };
+    }
+  })(),
+  maintenanceLastReset: (() => {
+    if (typeof localStorage === 'undefined') return { battery: {}, aircraft: {} };
+    try {
+      const stored = localStorage.getItem('maintenanceLastReset');
+      return stored ? JSON.parse(stored) : { battery: {}, aircraft: {} };
+    } catch {
+      return { battery: {}, aircraft: {} };
+    }
+  })(),
+  setMaintenanceThreshold: (type, field, value) => {
+    const thresholds = { ...get().maintenanceThresholds };
+    thresholds[type] = { ...thresholds[type], [field]: value };
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('maintenanceThresholds', JSON.stringify(thresholds));
+    }
+    set({ maintenanceThresholds: thresholds });
+  },
+  performMaintenance: (type, serial, date) => {
+    const lastReset = { ...get().maintenanceLastReset };
+    // Use provided date or default to now
+    const maintenanceDate = date ? date.toISOString() : new Date().toISOString();
+    lastReset[type] = { ...lastReset[type], [serial]: maintenanceDate };
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('maintenanceLastReset', JSON.stringify(lastReset));
+    }
+    set({ maintenanceLastReset: lastReset });
+  },
+  getMaintenanceLastReset: (type, serial) => {
+    return get().maintenanceLastReset[type][serial] || null;
+  },
 
   // Load all flights from database
   loadFlights: async () => {

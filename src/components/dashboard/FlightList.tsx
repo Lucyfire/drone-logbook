@@ -119,6 +119,7 @@ export function FlightList({
     deleteFlight,
     updateFlightName,
     unitSystem,
+    themeMode,
     getBatteryDisplayName,
     getDroneDisplayName,
     droneNameMap,
@@ -132,6 +133,12 @@ export function FlightList({
     setOverviewHighlightedFlightId,
   } =
     useFlightStore();
+
+  // Resolve theme mode for styling
+  const resolvedTheme = themeMode === 'system'
+    ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : themeMode;
+  const isLight = resolvedTheme === 'light';
   const heatmapDateFilter = useFlightStore((s) => s.heatmapDateFilter);
   const setHeatmapDateFilter = useFlightStore((s) => s.setHeatmapDateFilter);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -1245,7 +1252,7 @@ ${points}
                 );
               })()}
             </div>
-            <span className="text-xs font-medium text-gray-200 whitespace-nowrap min-w-[60px] flex items-center justify-center flex-shrink-0">
+            <span className={`text-xs font-medium whitespace-nowrap min-w-[60px] flex items-center justify-center flex-shrink-0 ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
               {(() => {
                 const lo = durationFilterMin ?? durationRange.minMins;
                 const hi = durationFilterMax ?? durationRange.maxMins;
@@ -1302,7 +1309,7 @@ ${points}
                 );
               })()}
             </div>
-            <span className="text-xs font-medium text-gray-200 whitespace-nowrap min-w-[60px] flex items-center justify-center flex-shrink-0">
+            <span className={`text-xs font-medium whitespace-nowrap min-w-[60px] flex items-center justify-center flex-shrink-0 ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
               {(() => {
                 const lo = altitudeFilterMin ?? altitudeRange.min;
                 const hi = altitudeFilterMax ?? altitudeRange.max;
@@ -1359,7 +1366,7 @@ ${points}
                 );
               })()}
             </div>
-            <span className="text-xs font-medium text-gray-200 whitespace-nowrap min-w-[60px] flex items-center justify-center flex-shrink-0">
+            <span className={`text-xs font-medium whitespace-nowrap min-w-[60px] flex items-center justify-center flex-shrink-0 ${isLight ? 'text-gray-700' : 'text-gray-200'}`}>
               {(() => {
                 const lo = distanceFilterMin ?? distanceRange.min;
                 const hi = distanceFilterMax ?? distanceRange.max;

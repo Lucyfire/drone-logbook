@@ -63,7 +63,7 @@
 
 - **High-Performance Analytics**: DuckDB-powered analytical queries with automatic downsampling for large datasets - import all your flight logs in one place. Free and open source, zero maintanance cost, no monthly subscription for unlimited number of flight log analysis.
 - **Multi-Format Support**: Import DJI flight logs (.txt) and Litchi CSV exports with automatic unit detection (metric/imperial). Litchi flights are auto-tagged for easy identification.
-- **Smart Deduplication**: Automatically detects and prevents duplicate flight imports based on drone serial, battery serial, and start time, even when importing the same flight from different export versions.
+- **Smart Deduplication**: Automatically detects and prevents duplicate flight imports based on drone serial, battery serial, and exact start time match, even when importing the same flight from different export versions.
 - **Universally available**: The application can be built locally from source, but for ease of use, standalone binaries are provided for Windows and MacOS - ready to deploy. A Docker image is also available for self-hosted web deployment.
 - **Interactive Flight Maps**: MapLibre GL with 3D terrain, satellite toggle, start/end markers, and a deck.gl 3D path overlay - visualize your flight map in 3D interatively. Flight replay with play/pause, seek slider, speed control (0.5x-16x), and a 3D-aware aircraft marker that follows the flight path at altitude. Live telemetry overlay during replay showing height, speed, battery, distance, attitude, and more - synced to the playback position. RC stick input overlay visualizes throttle, rudder, elevator, and aileron inputs with progressive-fill bars during playback.
 - **Telemetry Charts**: Height/VPS, speed, battery, attitude, RC signal, GPS satellites, RC uplink/downlink, distance-to-home, and velocity X/Y/Z with synchronized drag-to-zoom across all charts.
@@ -73,6 +73,7 @@
 - **Keyboard Shortcuts**: Up/Down arrows to browse flight list, Enter to select, Escape to close modals. Arrow keys work in all dropdowns.
 - **Overview Dashboard**: Aggregate totals, averages, heatmap activity with date range selector, pie-chart breakdowns (by drone, battery, flight duration), flight locations cluster map with geographic filter, and top-flight highlights - all filtered by sidebar selections
 - **Battery Health Insights**: Per-battery health bars with inline serial renaming, and per‑minute charge usage history timeline with zoom/scroll
+- **Maintenance Tracking**: Set flight and airtime thresholds for batteries and aircraft. Progress bars show usage since last maintenance with color-coded warnings (green → yellow → orange → red). Record maintenance with date picker to reset counters. Multi-select dropdowns for tracking multiple items.
 - **Theme & Units**: Light/Dark/System theme and Metric/Imperial units
 - **Exports**: Direct CSV, JSON, GPX, and KML export from the flight stats bar
 - **Backup & Restore**: Export your entire database to a portable backup file and restore it on any instance - works on both desktop and Docker
