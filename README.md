@@ -4,13 +4,13 @@
 
 <p align="center">
     <a href="https://github.com/arpanghosh8453/drone-logbook/releases">
-        <img src="assets/download-button.svg" alt="Download Latest Release" height="48"/>
+        <img src="https://img.shields.io/badge/Download-Latest%20Release-1a7f37?style=for-the-badge&logo=github" alt="Download Latest Release" height="48"/>
+    </a>
+    &nbsp;&nbsp;
+    <a href="https://opendronelog.com">
+        <img src="https://img.shields.io/badge/opendronelog.com-blue?style=for-the-badge&logo=globe" alt="Visit Website" height="48"/>
     </a>
 </p>
-
-<hr>
-
-<h1 align="center">Open Drone Logbook</h1>
 
 
 <p align="center">A high-performance application for analyzing drone flight logs (DJI and Litchi CSV formats). Available as a Tauri v2 desktop app or a Docker-deployable web app. Built with DuckDB and React.</p>
