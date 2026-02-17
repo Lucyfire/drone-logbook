@@ -94,6 +94,14 @@ You can find more details resources from this simple [google search](https://www
 
 Litchi flight logs can be exported as CSV files from the Litchi app. The parser automatically detects whether the export uses metric or imperial units based on the column headers (e.g., `altitude(feet)` vs `altitude(m)`) and converts everything to metric internally. Litchi-imported flights are automatically tagged with "Litchi" for easy filtering.
 
+## Migrating from Airdata?
+
+If you're looking to move away from Airdata but have years of flight logs stored there, you might feel stuck since Airdata doesn't offer a bulk download option. Manually downloading hundreds of flights one by one is tedious and time-consuming.
+
+To solve this, I built [**AirData Flight Log Downloader**](https://github.com/arpanghosh8453/airdata-downloader), a free, open-source desktop app that lets you bulk download all your flight logs from Airdata in the original DJI TXT format with just a few clicks.
+
+Simply download the app from the [releases page](https://github.com/arpanghosh8453/airdata-downloader/releases), log into your Airdata account, and download all your logs. Then import them directly into Drone Logbook for a seamless migration to a local-first, privacy-respecting flight log solution.
+
 ## Setup and installation (Windows/MacOS)
 
 There is no installation step if you want to use the standalone binary builds, just visit the latest [release page](https://github.com/arpanghosh8453/drone-logbook/releases), and download the appropriate binary for Windows or MacOS and run them.
