@@ -1345,6 +1345,19 @@ impl Database {
         Ok(result)
     }
 
+    /// Get all file hashes from existing flights
+    /// Used by sync to filter out already-imported files (web feature only)
+    #[allow(dead_code)]
+    pub fn get_all_file_hashes(&self) -> Result<Vec<String>, DatabaseError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT file_hash FROM flights WHERE file_hash IS NOT NULL AND file_hash != ''"
+        )?;
+        let hashes = stmt.query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(hashes)
+    }
+
     /// Check if a duplicate flight exists based on exact signature match (drone_serial + battery_serial + start_time).
     /// Returns the display_name of the matching flight if found, None otherwise.
     /// If any of the signature fields are None, returns None (can't reliably deduplicate).

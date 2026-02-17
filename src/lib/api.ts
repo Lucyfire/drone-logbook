@@ -371,6 +371,18 @@ export interface SyncConfig {
   syncPath: string | null;
 }
 
+export interface SyncFilesResponse {
+  files: string[];
+  syncPath: string | null;
+  message: string;
+}
+
+export interface SyncFileResponse {
+  success: boolean;
+  message: string;
+  fileHash: string | null;
+}
+
 /**
  * Get the sync folder configuration (web mode only).
  * Returns the configured SYNC_LOGS_PATH if set on the server.
@@ -380,6 +392,31 @@ export async function getSyncConfig(): Promise<SyncConfig> {
     return { processed: 0, skipped: 0, errors: 0, message: 'Not in web mode', syncPath: null };
   }
   return fetchJson<SyncConfig>('/sync/config');
+}
+
+/**
+ * List files available for sync in the server's SYNC_LOGS_PATH folder.
+ * Returns only files that haven't been imported yet (checked by hash).
+ */
+export async function getSyncFiles(): Promise<SyncFilesResponse> {
+  if (!isWeb) {
+    return { files: [], syncPath: null, message: 'Not in web mode' };
+  }
+  return fetchJson<SyncFilesResponse>('/sync/files');
+}
+
+/**
+ * Import a single file from the server's SYNC_LOGS_PATH folder.
+ */
+export async function syncSingleFile(filename: string): Promise<SyncFileResponse> {
+  if (!isWeb) {
+    return { success: false, message: 'Not in web mode', fileHash: null };
+  }
+  return fetchJson<SyncFileResponse>('/sync/file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
 }
 
 /**

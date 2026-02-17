@@ -210,10 +210,27 @@ All flight data (DuckDB database, cached decryption keys) is stored in a Docker 
 
 ### Environment variables
 
-| Variable   | Default                | Description                    |
-|------------|------------------------|--------------------------------|
-| `DATA_DIR` | `/data/drone-logbook`  | Database and config storage    |
-| `RUST_LOG` | `info`                 | Log level (debug, info, warn)  |
+| Variable        | Default                | Description                                                                 |
+|-----------------|------------------------|-----------------------------------------------------------------------------|
+| `DATA_DIR`      | `/data/drone-logbook`  | Database and config storage                                                 |
+| `RUST_LOG`      | `info`                 | Log level (debug, info, warn)                                               |
+| `SYNC_LOGS_PATH`| (not set)              | Path to mounted folder for automatic log import (e.g., `/sync-logs`)        |
+
+### Automatic log sync (Docker)
+
+You can mount a folder containing your drone flight logs and have the app automatically import new files on page load:
+
+1. Uncomment the volume mount in `docker-compose.yml` and set the path to your logs folder:
+   ```yaml
+   - /path/to/your/drone/logs:/sync-logs:ro
+   ```
+2. Uncomment the `SYNC_LOGS_PATH` environment variable:
+   ```yaml
+   - SYNC_LOGS_PATH=/sync-logs
+   ```
+3. Restart the container. New log files will be automatically imported when you open the app.
+
+The sync status and a manual "Sync" button will appear in the Import section when configured. During sync, the app shows file-by-file progress (current filename, X of Y counter) matching the desktop app experience.
 
 
 ## Configuration

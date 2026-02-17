@@ -41,6 +41,12 @@ fn err_response(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json
     )
 }
 
+/// Compute SHA256 hash of a file
+fn compute_file_hash(path: &std::path::Path) -> Result<String, String> {
+    LogParser::calculate_file_hash(path)
+        .map_err(|e| format!("Failed to compute hash: {}", e))
+}
+
 // ============================================================================
 // ROUTE HANDLERS
 // ============================================================================
@@ -671,12 +677,31 @@ async fn regenerate_smart_tags(
 
 /// Response for sync operation
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SyncResponse {
     processed: usize,
     skipped: usize,
     errors: usize,
     message: String,
     sync_path: Option<String>,
+}
+
+/// Response for listing sync folder files
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncFilesResponse {
+    files: Vec<String>,
+    sync_path: Option<String>,
+    message: String,
+}
+
+/// Response for single file sync
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncFileResponse {
+    success: bool,
+    message: String,
+    file_hash: Option<String>,
 }
 
 /// GET /api/sync/config — Get the sync folder path configuration
@@ -689,6 +714,186 @@ async fn get_sync_config() -> Json<SyncResponse> {
         message: if sync_path.is_some() { "Sync folder configured".to_string() } else { "No sync folder configured".to_string() },
         sync_path,
     })
+}
+
+/// GET /api/sync/files — List all log files in the sync folder
+async fn get_sync_files(
+    AxumState(state): AxumState<WebAppState>,
+) -> Result<Json<SyncFilesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let sync_path = match std::env::var("SYNC_LOGS_PATH") {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(Json(SyncFilesResponse {
+                files: vec![],
+                sync_path: None,
+                message: "SYNC_LOGS_PATH not configured".to_string(),
+            }));
+        }
+    };
+
+    let sync_dir = std::path::PathBuf::from(&sync_path);
+    if !sync_dir.exists() {
+        return Ok(Json(SyncFilesResponse {
+            files: vec![],
+            sync_path: Some(sync_path),
+            message: "Sync folder does not exist".to_string(),
+        }));
+    }
+
+    let entries = match std::fs::read_dir(&sync_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            return Err(err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read sync folder: {}", e),
+            ));
+        }
+    };
+
+    // Get existing file hashes to filter out already-imported files
+    let existing_hashes: std::collections::HashSet<String> = state.db.get_all_file_hashes()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
+    let files: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_file() {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    return name.ends_with(".txt") || name.ends_with(".csv");
+                }
+            }
+            false
+        })
+        .filter_map(|entry| {
+            let path = entry.path();
+            // Check if file is already imported by hash
+            if let Ok(hash) = compute_file_hash(&path) {
+                if existing_hashes.contains(&hash) {
+                    return None; // Skip already imported files
+                }
+            }
+            Some(entry.file_name().to_string_lossy().to_string())
+        })
+        .collect();
+
+    Ok(Json(SyncFilesResponse {
+        files,
+        sync_path: Some(sync_path),
+        message: "OK".to_string(),
+    }))
+}
+
+/// POST /api/sync/file — Import a single file from the sync folder
+async fn sync_single_file(
+    AxumState(state): AxumState<WebAppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<SyncFileResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let filename = payload.get("filename")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| err_response(StatusCode::BAD_REQUEST, "Missing filename".to_string()))?;
+
+    let sync_path = match std::env::var("SYNC_LOGS_PATH") {
+        Ok(path) => path,
+        Err(_) => {
+            return Ok(Json(SyncFileResponse {
+                success: false,
+                message: "SYNC_LOGS_PATH not configured".to_string(),
+                file_hash: None,
+            }));
+        }
+    };
+
+    let file_path = std::path::PathBuf::from(&sync_path).join(filename);
+    if !file_path.exists() {
+        return Ok(Json(SyncFileResponse {
+            success: false,
+            message: format!("File not found: {}", filename),
+            file_hash: None,
+        }));
+    }
+
+    // Check smart tags setting
+    let config_path = state.db.data_dir.join("config.json");
+    let tags_enabled = if config_path.exists() {
+        std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("smart_tags_enabled").and_then(|v| v.as_bool()))
+            .unwrap_or(true)
+    } else {
+        true
+    };
+
+    let parser = LogParser::new(&state.db);
+
+    let parse_result = match parser.parse_log(&file_path).await {
+        Ok(result) => result,
+        Err(crate::parser::ParserError::AlreadyImported(matching_flight)) => {
+            return Ok(Json(SyncFileResponse {
+                success: false,
+                message: format!("Already imported (matches '{}')", matching_flight),
+                file_hash: None,
+            }));
+        }
+        Err(e) => {
+            return Ok(Json(SyncFileResponse {
+                success: false,
+                message: format!("Parse error: {}", e),
+                file_hash: None,
+            }));
+        }
+    };
+
+    // Check for duplicate flight
+    if let Some(matching_flight) = state.db.is_duplicate_flight(
+        parse_result.metadata.drone_serial.as_deref(),
+        parse_result.metadata.battery_serial.as_deref(),
+        parse_result.metadata.start_time,
+    ).unwrap_or(None) {
+        return Ok(Json(SyncFileResponse {
+            success: false,
+            message: format!("Duplicate flight (matches '{}')", matching_flight),
+            file_hash: parse_result.metadata.file_hash.clone(),
+        }));
+    }
+
+    // Insert flight
+    let flight_id = match state.db.insert_flight(&parse_result.metadata) {
+        Ok(id) => id,
+        Err(e) => {
+            return Ok(Json(SyncFileResponse {
+                success: false,
+                message: format!("Failed to insert flight: {}", e),
+                file_hash: None,
+            }));
+        }
+    };
+
+    // Insert telemetry
+    if let Err(e) = state.db.bulk_insert_telemetry(flight_id, &parse_result.points) {
+        let _ = state.db.delete_flight(flight_id);
+        return Ok(Json(SyncFileResponse {
+            success: false,
+            message: format!("Failed to insert telemetry: {}", e),
+            file_hash: None,
+        }));
+    }
+
+    // Insert smart tags if enabled
+    if tags_enabled {
+        if let Err(e) = state.db.insert_flight_tags(flight_id, &parse_result.tags) {
+            log::warn!("Failed to insert tags: {}", e);
+        }
+    }
+
+    Ok(Json(SyncFileResponse {
+        success: true,
+        message: "OK".to_string(),
+        file_hash: parse_result.metadata.file_hash,
+    }))
 }
 
 /// POST /api/sync — Trigger sync from SYNC_LOGS_PATH folder
@@ -884,6 +1089,8 @@ pub fn build_router(state: WebAppState) -> Router {
         .route("/api/backup", get(export_backup))
         .route("/api/backup/restore", post(import_backup))
         .route("/api/sync/config", get(get_sync_config))
+        .route("/api/sync/files", get(get_sync_files))
+        .route("/api/sync/file", post(sync_single_file))
         .route("/api/sync", post(sync_from_folder))
         .layer(cors)
         .layer(DefaultBodyLimit::max(250 * 1024 * 1024)) // 250 MB

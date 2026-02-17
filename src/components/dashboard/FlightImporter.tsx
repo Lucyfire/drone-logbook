@@ -13,7 +13,7 @@
 
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { isWebMode, pickFiles, computeFileHash, getFlights, getSyncConfig, triggerSync } from '@/lib/api';
+import { isWebMode, pickFiles, computeFileHash, getFlights, getSyncConfig, getSyncFiles, syncSingleFile } from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
 
 // Storage keys for sync folder, blacklist, and autoscan
@@ -473,21 +473,74 @@ export function FlightImporter() {
             return;
           }
           
-          // Trigger sync from server
-          const result = await triggerSync();
+          // Get list of files to sync
+          const filesResponse = await getSyncFiles();
+          if (filesResponse.files.length === 0) {
+            setIsBackgroundSyncing(false);
+            return;
+          }
           
-          setIsBackgroundSyncing(false);
+          // Process files one by one with progress tracking
+          setIsBackgroundSyncing(false); // Switch to batch processing mode
+          setIsBatchProcessing(true);
+          setBatchTotal(filesResponse.files.length);
+          setBatchIndex(0);
           
-          if (result.processed > 0) {
-            setBackgroundSyncResult(`Synced ${result.processed} new file${result.processed === 1 ? '' : 's'}`);
-            // Refresh flight list
+          let processed = 0;
+          let skipped = 0;
+          let errors = 0;
+          
+          for (let i = 0; i < filesResponse.files.length; i++) {
+            if (backgroundSyncAbortRef.current) break;
+            
+            const filename = filesResponse.files[i];
+            setBatchIndex(i + 1);
+            setCurrentFileName(filename.length > 50 ? `${filename.slice(0, 50)}…` : filename);
+            
+            try {
+              const result = await syncSingleFile(filename);
+              if (result.success) {
+                processed++;
+                // Refresh flight list every 2 files to show progress
+                if (processed % 2 === 0) {
+                  const { loadFlights, loadAllTags } = useFlightStore.getState();
+                  loadFlights().then(() => loadAllTags());
+                }
+              } else if (result.message.toLowerCase().includes('already') || result.message.toLowerCase().includes('duplicate')) {
+                skipped++;
+              } else {
+                errors++;
+              }
+            } catch (e) {
+              console.error(`Failed to sync ${filename}:`, e);
+              errors++;
+            }
+          }
+          
+          setIsBatchProcessing(false);
+          setCurrentFileName(null);
+          setBatchTotal(0);
+          setBatchIndex(0);
+          
+          // Final refresh
+          if (processed > 0) {
             const { loadFlights, loadAllTags } = useFlightStore.getState();
             await loadFlights();
             loadAllTags();
           }
+          
+          // Show result message
+          if (processed > 0 || skipped > 0 || errors > 0) {
+            const parts: string[] = [];
+            if (processed > 0) parts.push(`${processed} imported`);
+            if (skipped > 0) parts.push(`${skipped} skipped`);
+            if (errors > 0) parts.push(`${errors} errors`);
+            setBatchMessage(`Sync complete: ${parts.join(', ')}`);
+          }
         } catch (e) {
           console.error('Background sync check failed:', e);
           setIsBackgroundSyncing(false);
+          setIsBatchProcessing(false);
         }
       }, 3000); // 3 second delay for lazy loading
       
@@ -622,38 +675,89 @@ export function FlightImporter() {
     // Cancel background sync - user action takes priority
     cancelBackgroundSync();
 
-    // Web mode: use server-side sync
+    // Web mode: use server-side sync with file-by-file progress
     if (isWebMode()) {
       setIsSyncing(true);
       setBatchMessage(null);
       
       try {
-        const result = await triggerSync();
-        setIsSyncing(false);
+        // First get the list of files to sync
+        const filesResponse = await getSyncFiles();
         
-        if (!result.syncPath) {
+        if (!filesResponse.syncPath) {
+          setIsSyncing(false);
           setBatchMessage('NO_SYNC_FOLDER_WEB');
           return;
         }
         
-        if (result.processed > 0 || result.skipped > 0 || result.errors > 0) {
-          const parts: string[] = [];
-          if (result.processed > 0) parts.push(`${result.processed} imported`);
-          if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
-          if (result.errors > 0) parts.push(`${result.errors} errors`);
-          setBatchMessage(`Sync complete: ${parts.join(', ')}`);
+        if (filesResponse.files.length === 0) {
+          setIsSyncing(false);
+          setBatchMessage('No new files to import');
+          return;
+        }
+        
+        // Switch to batch processing mode for progress tracking
+        setIsSyncing(false);
+        setIsBatchProcessing(true);
+        setBatchTotal(filesResponse.files.length);
+        setBatchIndex(0);
+        
+        let processed = 0;
+        let skipped = 0;
+        let errors = 0;
+        
+        for (let i = 0; i < filesResponse.files.length; i++) {
+          const filename = filesResponse.files[i];
+          setBatchIndex(i + 1);
+          setCurrentFileName(filename.length > 50 ? `${filename.slice(0, 50)}…` : filename);
           
-          // Refresh flight list
+          try {
+            const result = await syncSingleFile(filename);
+            if (result.success) {
+              processed++;
+              // Refresh flight list every 2 files to show progress
+              if (processed % 2 === 0) {
+                const { loadFlights, loadAllTags } = useFlightStore.getState();
+                loadFlights().then(() => loadAllTags());
+              }
+            } else if (result.message.toLowerCase().includes('already') || result.message.toLowerCase().includes('duplicate')) {
+              skipped++;
+            } else {
+              errors++;
+            }
+          } catch (e) {
+            console.error(`Failed to sync ${filename}:`, e);
+            errors++;
+          }
+        }
+        
+        setIsBatchProcessing(false);
+        setCurrentFileName(null);
+        setBatchTotal(0);
+        setBatchIndex(0);
+        
+        // Final refresh
+        if (processed > 0) {
           const { loadFlights, loadAllTags } = useFlightStore.getState();
           await loadFlights();
           loadAllTags();
+        }
+        
+        // Show result
+        if (processed > 0 || skipped > 0 || errors > 0) {
+          const parts: string[] = [];
+          if (processed > 0) parts.push(`${processed} imported`);
+          if (skipped > 0) parts.push(`${skipped} skipped`);
+          if (errors > 0) parts.push(`${errors} errors`);
+          setBatchMessage(`Sync complete: ${parts.join(', ')}`);
         } else {
-          setBatchMessage(result.message);
+          setBatchMessage('No files to sync');
         }
       } catch (e) {
         console.error('Sync failed:', e);
         setBatchMessage(`Sync failed: ${e}`);
         setIsSyncing(false);
+        setIsBatchProcessing(false);
       }
       return;
     }
@@ -788,6 +892,11 @@ export function FlightImporter() {
           {!isWebMode() && syncFolderPath && (
             <p className="mt-2 text-[10px] text-gray-500 truncate max-w-full" title={syncFolderPath}>
               Sync: {getSyncFolderDisplayName()}
+            </p>
+          )}
+          {isWebMode() && webSyncPath && (
+            <p className="mt-2 text-[10px] text-gray-500 truncate max-w-full" title={webSyncPath}>
+              Sync: {webSyncPath} (auto-sync on load)
             </p>
           )}
           

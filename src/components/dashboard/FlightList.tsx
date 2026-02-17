@@ -12,13 +12,14 @@ import {
   useState,
 } from 'react';
 import * as api from '@/lib/api';
-import { isWebMode, downloadFile } from '@/lib/api';
+import { isWebMode, downloadFile, downloadBlob } from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
 import { formatDuration, formatDateTime, formatDistance } from '@/lib/utils';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import type { FlightDataResponse, Flight, TelemetryData } from '@/types';
 import { addToBlacklist } from './FlightImporter';
 import 'react-day-picker/dist/style.css';
+import JSZip from 'jszip';
 
 /**
  * Check if element is mostly visible in the viewport
@@ -1064,6 +1065,9 @@ ${points}
         }
       }
 
+      // For web mode, collect files in a ZIP
+      const zip = isWebMode() ? new JSZip() : null;
+
       for (let i = 0; i < filteredFlights.length; i++) {
         const flight = filteredFlights[i];
         const baseName = flight.displayName || flight.fileName || `flight`;
@@ -1082,15 +1086,24 @@ ${points}
           else if (format === 'gpx') content = buildGpx(data);
           else if (format === 'kml') content = buildKml(data);
 
-          if (isWebMode()) {
-            downloadFile(`${safeName}.${extension}`, content);
-          } else {
+          if (isWebMode() && zip) {
+            // Add file to ZIP
+            zip.file(`${safeName}.${extension}`, content);
+          } else if (!isWebMode()) {
             const { writeTextFile } = await import('@tauri-apps/plugin-fs');
             await writeTextFile(`${dirPath}/${safeName}.${extension}`, content);
           }
         } catch (err) {
           console.error(`Failed to export flight ${flight.id}:`, err);
         }
+      }
+
+      // For web mode, generate and download the ZIP file
+      if (isWebMode() && zip) {
+        setExportProgress({ done: filteredFlights.length, total: filteredFlights.length, currentFile: 'Creating ZIP...' });
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        const timestamp = new Date().toISOString().slice(0, 10);
+        downloadBlob(`drone_flights_${timestamp}_${format}.zip`, zipBlob);
       }
 
       setExportProgress({ done: filteredFlights.length, total: filteredFlights.length, currentFile: '' });
