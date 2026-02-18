@@ -323,6 +323,78 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
   const mapRef = useRef<MapRef | null>(null);
   const deckRef = useRef<any>(null);
 
+  // Capture map snapshot when requested (for FlyCard export)
+  const captureMapSnapshot = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) {
+      console.warn('Map ref not available for capture');
+      return null;
+    }
+    
+    try {
+      // Force both map and deck.gl to render
+      map.triggerRepaint();
+      const deckInstance = deckRef.current?.deck;
+      deckInstance?.redraw('capture');
+      
+      // Get the map canvas
+      const mapCanvas = map.getCanvas();
+      if (!mapCanvas) {
+        console.warn('Map canvas not available');
+        return null;
+      }
+      
+      // Create a new canvas to combine map + deck.gl overlay
+      const combinedCanvas = document.createElement('canvas');
+      combinedCanvas.width = mapCanvas.width;
+      combinedCanvas.height = mapCanvas.height;
+      const ctx = combinedCanvas.getContext('2d');
+      if (!ctx) return null;
+      
+      // Draw the map base layer
+      ctx.drawImage(mapCanvas, 0, 0);
+      
+      // Get deck.gl canvas using the getCanvas() method
+      const deckCanvas = deckInstance?.getCanvas();
+      if (deckCanvas && deckCanvas.width > 0 && deckCanvas.height > 0) {
+        try {
+          ctx.drawImage(deckCanvas, 0, 0);
+        } catch (e) {
+          console.warn('Could not draw deck.gl canvas:', e);
+          // If deck.gl canvas fails, try to find it in the parent container
+          const mapContainer = mapRef.current?.getContainer();
+          const parent = mapContainer?.parentElement;
+          if (parent) {
+            const allCanvases = parent.querySelectorAll('canvas');
+            allCanvases.forEach((canvas) => {
+              if (canvas !== mapCanvas && canvas.width > 0 && canvas.height > 0) {
+                try {
+                  ctx.drawImage(canvas, 0, 0);
+                } catch {
+                  // Canvas might be tainted
+                }
+              }
+            });
+          }
+        }
+      }
+      
+      return combinedCanvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Failed to capture map snapshot:', err);
+      return null;
+    }
+  }, []);
+
+  // Expose capture function via store when map is ready
+  useEffect(() => {
+    // Store the capture function reference for external access
+    (window as any).__captureFlightMapSnapshot = captureMapSnapshot;
+    return () => {
+      delete (window as any).__captureFlightMapSnapshot;
+    };
+  }, [captureMapSnapshot]);
+
   // ─── Flight replay state ────────────────────────────────────────────
   const [isPlaying, setIsPlaying] = useState(false);
   const [replayProgress, setReplayProgress] = useState(0); // 0–1
@@ -1152,12 +1224,15 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
         style={{ width: '100%', height: '100%', position: 'absolute', top: '0', right: '0', bottom: '0', left: '0' }}
         mapStyle={activeMapStyle}
         attributionControl={false}
+        preserveDrawingBuffer={true}
         ref={mapRef}
         onMove={handleMapMove}
         onLoad={() => {
           if (is3D) {
             enableTerrain();
           }
+          // Signal that map is loaded for FlyCard capture
+          (window as any).__flightMapLoaded = true;
         }}
       >
         <NavigationControl position="top-right" />

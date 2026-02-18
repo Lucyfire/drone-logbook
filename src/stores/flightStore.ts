@@ -99,6 +99,10 @@ interface FlightState {
   mapReplayProgress: number;  // Replay progress from map (0 to 1)
   setMapReplayProgress: (progress: number) => void;
 
+  // Map snapshot for FlyCard (captured from current map view)
+  mapSnapshotData: string | null;  // data URL of map canvas
+  setMapSnapshotData: (data: string | null) => void;
+
   // Overview map highlighted flight (single-click preview in overview mode)
   overviewHighlightedFlightId: number | null;
   setOverviewHighlightedFlightId: (flightId: number | null) => void;
@@ -189,6 +193,10 @@ export const useFlightStore = create<FlightState>((set, get) => ({
   mapReplayProgress: 0,
   setMapSyncEnabled: (enabled: boolean) => set({ mapSyncEnabled: enabled }),
   setMapReplayProgress: (progress: number) => set({ mapReplayProgress: progress }),
+
+  // Map snapshot for FlyCard
+  mapSnapshotData: null,
+  setMapSnapshotData: (data) => set({ mapSnapshotData: data }),
 
   // Overview map highlighted flight (single-click preview in overview mode)
   overviewHighlightedFlightId: null,

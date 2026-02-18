@@ -18,6 +18,7 @@ import { formatDuration, formatDateTime, formatDistance } from '@/lib/utils';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import type { FlightDataResponse, Flight, TelemetryData } from '@/types';
 import { addToBlacklist } from './FlightImporter';
+import { FlyCardGenerator } from './FlyCardGenerator';
 import 'react-day-picker/dist/style.css';
 import JSZip from 'jszip';
 
@@ -210,6 +211,9 @@ export function FlightList({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flightId: number } | null>(null);
   const [contextExportSubmenuOpen, setContextExportSubmenuOpen] = useState(false);
   const [isRegeneratingTags, setIsRegeneratingTags] = useState(false);
+  // FlyCard generator state
+  const [flyCardFlightId, setFlyCardFlightId] = useState<number | null>(null);
+  const [flyCardPending, setFlyCardPending] = useState<number | null>(null); // Flight ID waiting for map load
   const dateButtonRef = useRef<HTMLButtonElement | null>(null);
   const sortButtonRef = useRef<HTMLButtonElement | null>(null);
   const sortDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -1387,6 +1391,39 @@ ${points}
   const handleContextDelete = (flightId: number) => {
     setContextMenu(null);
     setConfirmDeleteId(flightId);
+  };
+
+  // Handle generate FlyCard from context menu
+  const handleContextGenerateFlyCard = async (flightId: number) => {
+    setContextMenu(null);
+    
+    // If this flight is not currently selected, select it first
+    if (selectedFlightId !== flightId) {
+      // Mark map as not loaded yet
+      (window as any).__flightMapLoaded = false;
+      
+      // Set pending state to show we're waiting
+      setFlyCardPending(flightId);
+      
+      // Select the flight (this will trigger map reload)
+      await selectFlight(flightId);
+      onSelectFlight?.(flightId);
+      
+      // Wait for map to load (poll for up to 5 seconds)
+      let attempts = 0;
+      while (!(window as any).__flightMapLoaded && attempts < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        attempts++;
+      }
+      
+      // Extra delay to ensure map tiles are rendered
+      await new Promise(r => setTimeout(r, 500));
+      
+      setFlyCardPending(null);
+    }
+    
+    // Now open the FlyCard generator
+    setFlyCardFlightId(flightId);
   };
 
   if (flights.length === 0) {
@@ -2645,6 +2682,24 @@ ${points}
             Regenerate Smart Tags
           </button>
 
+          {/* Generate FlyCard */}
+          <button
+            type="button"
+            onClick={() => activeView !== 'overview' && handleContextGenerateFlyCard(contextMenu.flightId)}
+            disabled={activeView === 'overview'}
+            className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 ${
+              activeView === 'overview'
+                ? 'text-gray-500 cursor-not-allowed'
+                : 'text-gray-300 hover:bg-gray-700/50'
+            }`}
+            title={activeView === 'overview' ? 'Select a flight first to generate FlyCard' : undefined}
+          >
+            <svg className={`w-4 h-4 ${activeView === 'overview' ? 'text-gray-600' : 'text-orange-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Generate FlyCard
+          </button>
+
           {/* Divider */}
           <div className="my-1 border-t border-gray-700" />
 
@@ -2810,6 +2865,33 @@ ${points}
                 />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FlyCard Generator Modal */}
+      {flyCardFlightId && (() => {
+        const flyCardFlight = flights.find(f => f.id === flyCardFlightId);
+        if (!flyCardFlight) return null;
+        return (
+          <FlyCardGenerator
+            flight={flyCardFlight}
+            unitSystem={unitSystem}
+            onClose={() => setFlyCardFlightId(null)}
+          />
+        );
+      })()}
+
+      {/* FlyCard Pending Overlay - shown while waiting for flight to load */}
+      {flyCardPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-drone-dark rounded-xl p-6 shadow-xl border border-gray-700 text-center">
+            <svg className="w-10 h-10 text-drone-primary animate-spin mx-auto mb-3" fill="none" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+              <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
+            </svg>
+            <p className="text-white font-medium">Loading flight map...</p>
+            <p className="text-gray-400 text-sm mt-1">Preparing FlyCard preview</p>
           </div>
         </div>
       )}
