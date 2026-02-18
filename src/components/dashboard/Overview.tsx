@@ -216,6 +216,9 @@ export function Overview({ stats, flights, unitSystem, onSelectFlight }: Overvie
 
   return (
     <div className="min-w-[1100px] px-4 pt-4 pb-24 space-y-5">
+        {/* Pilot Milestone Timeline */}
+        <PilotMilestoneTimeline totalHours={filteredStats.totalDurationSecs / 3600} />
+
         {/* Primary Stats */}
         <div className="grid grid-cols-4 gap-3">
         <StatCard label="Total Flights" value={filteredStats.totalFlights.toLocaleString()} icon={<FlightIcon />} />
@@ -443,6 +446,187 @@ function StatCard({
       {icon && <div className="text-drone-primary mb-1">{icon}</div>}
       <span className={small ? 'text-lg font-bold text-white' : 'stat-value'}>{value}</span>
       <span className={small ? 'text-xs text-gray-400' : 'stat-label'}>{label}</span>
+    </div>
+  );
+}
+
+// Milestone icon components
+function MilestoneIconBeginner() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M12 5l7 7-7 7" />
+    </svg>
+  );
+}
+
+function MilestoneIconNovice() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3" strokeWidth={1.5} />
+      <circle cx="12" cy="12" r="8" strokeWidth={1.5} strokeDasharray="4 2" />
+    </svg>
+  );
+}
+
+function MilestoneIconIntermediate() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function MilestoneIconAdvanced() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+    </svg>
+  );
+}
+
+function MilestoneIconExpert() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+  );
+}
+
+function MilestoneIconLegendary() {
+  return (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3l3.5 3L12 3l3.5 3L19 3v13a2 2 0 01-2 2H7a2 2 0 01-2-2V3z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 22v-4" />
+      <circle cx="12" cy="10" r="2" strokeWidth={1.5} />
+    </svg>
+  );
+}
+
+// Pilot milestone data
+const MILESTONES = [
+  { hours: 0, label: 'Beginner', icon: MilestoneIconBeginner, description: 'First flight awaits!' },
+  { hours: 5, label: 'Novice', icon: MilestoneIconNovice, description: 'Learning the basics' },
+  { hours: 20, label: 'Intermediate', icon: MilestoneIconIntermediate, description: 'Building confidence' },
+  { hours: 50, label: 'Advanced', icon: MilestoneIconAdvanced, description: 'Skilled aviator' },
+  { hours: 100, label: 'Expert', icon: MilestoneIconExpert, description: 'Seasoned pilot' },
+  { hours: 200, label: 'Legendary', icon: MilestoneIconLegendary, description: 'Master of the skies' },
+];
+
+function PilotMilestoneTimeline({ totalHours }: { totalHours: number }) {
+  // Calculate current milestone index and progress within segment
+  const currentMilestoneIndex = useMemo(() => {
+    for (let i = MILESTONES.length - 1; i >= 0; i--) {
+      if (totalHours >= MILESTONES[i].hours) return i;
+    }
+    return 0;
+  }, [totalHours]);
+
+  const currentMilestone = MILESTONES[currentMilestoneIndex];
+  const nextMilestone = MILESTONES[currentMilestoneIndex + 1];
+
+  // Calculate segment progress (0-100) for each segment
+  const getSegmentProgress = (segmentIndex: number) => {
+    const segmentStart = MILESTONES[segmentIndex].hours;
+    const segmentEnd = MILESTONES[segmentIndex + 1]?.hours ?? segmentStart;
+    
+    if (totalHours <= segmentStart) return 0;
+    if (totalHours >= segmentEnd) return 100;
+    
+    return ((totalHours - segmentStart) / (segmentEnd - segmentStart)) * 100;
+  };
+
+  // Format hours display
+  const formatHours = (hours: number) => {
+    if (hours >= 1) return `${hours.toFixed(1)}h`;
+    const mins = Math.round(hours * 60);
+    return `${mins}m`;
+  };
+
+  return (
+    <div className="milestone-timeline milestone-card rounded-xl px-6 py-3 mb-5">
+      {/* Single-line timeline with labels */}
+      <div className="flex items-center gap-4">
+        {/* Current rank icon */}
+        <div className="text-cyan-400 flex-shrink-0">
+          <currentMilestone.icon />
+        </div>
+
+        {/* Timeline Track */}
+        <div className="relative flex-1 h-10">
+          {/* Background track - centered vertically */}
+          <div className="milestone-track absolute left-0 right-0 h-1.5 rounded-full top-1" />
+
+          {/* Filled segments - centered vertically */}
+          <div className="absolute left-0 right-0 h-1.5 flex top-1">
+            {MILESTONES.slice(0, -1).map((_, idx) => {
+              const progress = getSegmentProgress(idx);
+              const segmentWidth = 100 / (MILESTONES.length - 1);
+              return (
+                <div
+                  key={idx}
+                  className="relative h-full"
+                  style={{ width: `${segmentWidth}%` }}
+                >
+                  {progress > 0 && (
+                    <div
+                      className="milestone-fill absolute left-0 top-0 h-full rounded-full"
+                      style={{ width: `${progress}%` }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Milestone nodes with labels */}
+          <div className="absolute left-0 right-0 top-0 flex justify-between">
+            {MILESTONES.map((milestone, idx) => {
+              const isCompleted = totalHours >= milestone.hours;
+              const isActive = idx === currentMilestoneIndex;
+              const isFuture = idx > currentMilestoneIndex;
+              const isFirst = idx === 0;
+              const isLast = idx === MILESTONES.length - 1;
+              
+              return (
+                <div 
+                  key={idx} 
+                  className={`flex flex-col items-center ${isFirst ? 'items-start' : isLast ? 'items-end' : ''}`}
+                  style={{ width: 0 }}
+                >
+                  {/* Node - positioned to center on track */}
+                  <div
+                    className={`milestone-node rounded-full border-2 border-drone-dark z-10 ${
+                      isActive ? 'active w-4 h-4' : 'w-3 h-3'
+                    } ${isCompleted ? 'completed' : ''}`}
+                    style={{ marginTop: isActive ? '-2px' : '0' }}
+                  />
+                  
+                  {/* Combined label - pushed down more */}
+                  <div className={`mt-3 text-[10px] whitespace-nowrap ${
+                    isFuture ? 'text-gray-500' : isActive ? 'text-white font-semibold' : 'text-gray-400'
+                  }`}>
+                    {milestone.hours === 0 ? 'Start' : milestone.hours === 200 ? '200+' : `${milestone.hours}h`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Next milestone info */}
+        <div className="flex-shrink-0 text-right">
+          {nextMilestone ? (
+            <div className="text-xs">
+              <span className="text-gray-400">Next: </span>
+              <span className="text-white font-medium">{nextMilestone.label}</span>
+              <span className="text-cyan-400 font-medium"> ({formatHours(nextMilestone.hours - totalHours)})</span>
+            </div>
+          ) : (
+            <div className="text-xs text-amber-400 font-medium">Max Rank!</div>
+          )}
+          <div className="text-sm font-bold text-white">{formatHours(totalHours)} flown</div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -918,3 +918,91 @@ body.theme-light .spinner.border-drone-primary {
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
+
+/* ===== Pilot Milestone Timeline ===== */
+.milestone-timeline {
+  --milestone-track: rgba(100, 116, 139, 0.2);
+  --milestone-fill: linear-gradient(90deg, #0ea5e9, #06b6d4, #14b8a6);
+  --milestone-glow: rgba(14, 165, 233, 0.3);
+  --milestone-node-inactive: rgba(100, 116, 139, 0.4);
+  --milestone-node-active: linear-gradient(135deg, #0ea5e9, #06b6d4);
+  --milestone-node-glow: rgba(6, 182, 212, 0.5);
+  --milestone-text: rgba(148, 163, 184, 0.9);
+  --milestone-text-active: #f1f5f9;
+  --milestone-label-bg: rgba(15, 23, 42, 0.6);
+  --milestone-card-bg: rgba(15, 23, 42, 0.4);
+  --milestone-card-border: rgba(100, 116, 139, 0.2);
+}
+
+body.theme-light .milestone-timeline {
+  --milestone-track: rgba(148, 163, 184, 0.25);
+  --milestone-fill: linear-gradient(90deg, #0284c7, #0891b2, #0d9488);
+  --milestone-glow: rgba(2, 132, 199, 0.25);
+  --milestone-node-inactive: rgba(148, 163, 184, 0.5);
+  --milestone-node-active: linear-gradient(135deg, #0284c7, #0891b2);
+  --milestone-node-glow: rgba(8, 145, 178, 0.4);
+  --milestone-text: rgba(71, 85, 105, 0.9);
+  --milestone-text-active: #0f172a;
+  --milestone-label-bg: rgba(255, 255, 255, 0.8);
+  --milestone-card-bg: rgba(255, 255, 255, 0.6);
+  --milestone-card-border: rgba(203, 213, 225, 0.5);
+}
+
+.milestone-track {
+  background: var(--milestone-track);
+}
+
+.milestone-fill {
+  background: var(--milestone-fill);
+  box-shadow: 0 0 12px var(--milestone-glow);
+}
+
+.milestone-node {
+  background: var(--milestone-node-inactive);
+  transition: all 0.3s ease;
+}
+
+.milestone-node.active {
+  background: var(--milestone-node-active);
+  box-shadow: 0 0 12px var(--milestone-node-glow), 0 0 24px var(--milestone-node-glow);
+}
+
+.milestone-node.completed {
+  background: var(--milestone-node-active);
+}
+
+.milestone-label {
+  color: var(--milestone-text);
+  transition: all 0.3s ease;
+}
+
+.milestone-label.active {
+  color: var(--milestone-text-active);
+}
+
+.milestone-badge {
+  background: var(--milestone-label-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.milestone-card {
+  background: var(--milestone-card-bg);
+  border: 1px solid var(--milestone-card-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Pulse animation for current milestone node */
+@keyframes milestonePulse {
+  0%, 100% {
+    box-shadow: 0 0 12px var(--milestone-node-glow), 0 0 24px var(--milestone-node-glow);
+  }
+  50% {
+    box-shadow: 0 0 18px var(--milestone-node-glow), 0 0 36px var(--milestone-node-glow);
+  }
+}
+
+.milestone-node.active {
+  animation: milestonePulse 2s ease-in-out infinite;
+}
