@@ -79,6 +79,7 @@
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [How to obtain your own DJI Developer API key](#how-to-obtain-your-own-dji-developer-api-key)
+- [Contribution Guidelines](#contribution-guidelines)
 - [Love this project?](#love-this-project)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
@@ -356,6 +357,17 @@ I have shipped this project with my own API key to save you from some extra pain
 3. Click `CREATE APP`, choose `Open API` as the App Type, and provide the necessary details like `App Name`, `Category`, and `Description`.
 4. After creating the app, activate it through the link sent to your email.
 6. On your developer user page, find your app's details to retrieve the 31 character long alphanumeric ApiKey (labeled as the SDK key or APP key). Do not use the APP ID number, that is not your API key. 
+
+
+## Contribution Guidelines
+
+We welcome meaningful contributions to Drone Logbook! Before implementing a new feature, please open an issue first to discuss your idea with the maintainer—this ensures alignment with the project's scope and avoids wasted effort.
+
+For more details, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### User Scripts
+
+Looking to extend functionality without waiting for official features? Check out the **Discussions** channel with the `User-Script` tag, where community members share custom scripts, collaborate with developers, and find useful enhancements for custom workflow.
 
 
 ## Love this project?
