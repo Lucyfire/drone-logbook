@@ -311,15 +311,15 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={isBusy ? undefined : onClose}
       />
 
-      {/* Modal */}
-      <div className="relative bg-drone-secondary rounded-xl border border-gray-700 shadow-2xl w-full max-w-3xl mx-4 overflow-hidden">
+      {/* Modal - use grid to handle overflow properly */}
+      <div className="relative bg-drone-secondary rounded-xl border border-gray-700 shadow-2xl w-full max-w-3xl max-h-full grid grid-rows-[auto_1fr]">
         {/* Blocking overlay while a long-running operation is in progress */}
         {isBusy && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 dark:bg-black/60 backdrop-blur-[2px] rounded-xl">
@@ -361,8 +361,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           </button>
         </div>
 
-        {/* Content — two columns */}
-        <div className="p-4 flex gap-0 max-h-[70vh] overflow-y-auto">
+        {/* Content — two columns - scrollable area */}
+        <div className="p-4 overflow-y-auto min-h-0">
+          <div className="flex gap-0">
           {/* Left Column: Preferences & API Key */}
           <div className="flex-1 space-y-4 pr-5">
             {/* Units */}
@@ -966,6 +967,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </>
               )}
             </div>
+          </div>
           </div>
         </div>
 
