@@ -179,6 +179,18 @@ The flight list displays all imported flights with the following information:
 > [!WARNING]
 > Deleted flights cannot be recovered unless you have a database backup.
 
+### Context Menu Actions
+
+Right-click on any flight in the list to access additional actions:
+
+| Action | Description |
+|--------|-------------|
+| **Rename** | Edit the flight name |
+| **Delete** | Remove the flight from the database |
+| **Regenerate Smart Tags** | Re-apply automatic tags to this flight |
+| **Generate FlyCard** | Create a shareable image with flight stats (disabled in Overview mode) |
+| **Export** | Export this flight to CSV, JSON, GPX, or KML |
+
 ### Sorting Options
 
 Click the sort dropdown to sort flights by:
@@ -578,6 +590,27 @@ With a flight selected, use the **Export** dropdown in the stats bar:
 | **JSON** | Structured data including flight metadata |
 | **GPX** | GPS track for mapping applications |
 | **KML** | Google Earth compatible flight path |
+
+### FlyCard Generator
+
+Create shareable social media images from your flights:
+
+1. **Right-click** on any flight in the list (must be in Flights view, not Overview)
+2. Select **Generate FlyCard** from the context menu
+3. The app will load the flight and capture the current map view
+4. A preview modal shows the generated 1080x1080 image with:
+   - Map background with your flight path
+   - Semi-transparent dark overlay for readability
+   - Flight stats (distance, max altitude, duration, max speed)
+   - Aircraft name
+   - App branding with logo
+5. Click **Download** to save the image
+
+> [!TIP]
+> Position and zoom the map before generating for the best composition. The FlyCard captures exactly what you see on screen.
+
+> [!NOTE]
+> The Generate FlyCard option is disabled (grayed out) when in Overview mode. Switch to Flights view to enable it.
 
 ### Bulk Export
 

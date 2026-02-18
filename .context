@@ -106,6 +106,7 @@
       "Map: Replay telemetry overlay (top-right) showing live-interpolated height, speed, distance, battery, satellites, attitude, and coordinates synced to playback position. RC stick input overlay above playbar with progressive-fill bar indicators for throttle, rudder, elevator, and aileron — theme-aware with visible track rails. Hover tooltip paused during replay.",
       "Map: Aircraft toggle to show/hide replay controls and marker. Satellite maxzoom 18, terrain DEM maxzoom 12.",
       "Export: CSV/JSON/GPX/KML downloads from flight stats. KML uses relativeToGround altitude mode.",
+      "FlyCard: Shareable 1080x1080 flight stats image generated from context menu. Captures current map view (satellite/terrain + flight path), overlays flight stats (distance, altitude, duration, speed, aircraft name), and adds branding. Uses html2canvas for rendering. Available only in Flights view (disabled in Overview). Desktop uses native save dialog via Tauri.",
       "Logging: comprehensive debug logging via tauri-plugin-log (desktop) or env_logger (web).",
       "Crash protection: parser uses spawn_blocking + catch_unwind + timeout. Telemetry validated for GPS range, finite values, altitude/speed sanity.",
       "UI polish: theme variables, tag styling for device/serials, modal scrollbar lock.",
@@ -149,6 +150,7 @@
         "src/components/dashboard/SettingsModal.tsx",
         "src/components/dashboard/WeatherModal.tsx",
         "src/components/dashboard/Overview.tsx",
+        "src/components/dashboard/FlyCardGenerator.tsx",
         "src/components/ui/Select.tsx",
         "src/components/charts/TelemetryCharts.tsx",
         "src/components/map/FlightMap.tsx"
