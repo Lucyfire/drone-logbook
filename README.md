@@ -388,6 +388,10 @@ If you find this project helpful, please consider:
 
 BSD 3-clause - see [LICENSE](LICENSE) for details.
 
+## Declaration
+
+While some parts of this codebase were written with AI assistance (Claude Opus) for convinience, the entirety of OpenDroneLog is thoughtfully architected, manually tested before every release, and managed by the me in my free time. Long-term maintenance remain my priority with this project as it grows. The `.context` file provides a machine parsable high quality summary of the project overview, which is updated alongside the project for future references.  
+
 ## Acknowledgments
 
 - [dji-log-parser](https://github.com/lvauvillier/dji-log-parser) - DJI log parsing
