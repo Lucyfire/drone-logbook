@@ -4,6 +4,8 @@
 //! Supports two build modes:
 //! - `tauri-app` (default): Desktop app with Tauri v2
 //! - `web`: REST API server with Axum for Docker/web deployment
+//!
+//! Licensed under the GNU Affero General Public License v3.0. See the LICENSE file for details.
 
 #![cfg_attr(
     all(not(debug_assertions), feature = "tauri-app"),

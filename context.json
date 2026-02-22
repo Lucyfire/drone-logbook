@@ -2,6 +2,7 @@
   "project": {
     "name": "Drone Logbook",
     "goal": "Local-first drone logbook with charts, maps, and analytics. Supports DJI and Litchi CSV formats. Available as a Tauri v2 desktop app or a Docker-deployable web app.",
+    "license": "AGPL-3.0-only",
     "stack": {
       "desktop": "Tauri v2 (feature: tauri-app)",
       "web": "Axum 0.7 + Nginx (feature: web)",

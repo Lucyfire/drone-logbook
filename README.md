@@ -395,7 +395,7 @@ If you find this project helpful, please consider:
 
 ## License
 
-BSD 3-clause - see [LICENSE](LICENSE) for details.
+AGPL-3.0 - see [LICENSE](LICENSE) for details.
 
 ## Declaration
 

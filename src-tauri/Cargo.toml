@@ -5,6 +5,7 @@ description = "Drone Logbook — A high-performance drone flight log analyzer"
 authors = ["Drone Logbook Contributors"]
 edition = "2021"
 rust-version = "1.70"
+license = "AGPL-3.0-only"
 
 [lib]
 name = "drone_logbook_lib"
