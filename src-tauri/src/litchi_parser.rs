@@ -113,6 +113,11 @@ impl ColumnMap {
     fn get_bool(&self, row: &[&str], field: &str) -> Option<bool> {
         self.get_i32(row, field).map(|v| v != 0)
     }
+
+    /// Check if a column exists in the header
+    fn has_column(&self, field: &str) -> bool {
+        self.indices.contains_key(field)
+    }
 }
 
 /// Litchi CSV Parser
@@ -203,6 +208,19 @@ impl<'a> LitchiParser<'a> {
             }
         }
 
+        // Normalize timestamps to relative ms from flight start
+        // This handles the case where datetime was used (epoch ms) instead of time(millisecond)
+        if !points.is_empty() {
+            let min_timestamp = points.iter().map(|p| p.timestamp_ms).min().unwrap_or(0);
+            if min_timestamp > 0 {
+                // Timestamps are epoch-based, normalize to relative
+                for point in &mut points {
+                    point.timestamp_ms -= min_timestamp;
+                }
+                log::debug!("Normalized timestamps by subtracting {} ms", min_timestamp);
+            }
+        }
+
         if points.is_empty() {
             return Err(ParserError::NoTelemetryData);
         }
@@ -239,19 +257,23 @@ impl<'a> LitchiParser<'a> {
 
     /// Parse a single CSV row into a TelemetryPoint
     fn parse_row(&self, col_map: &ColumnMap, row: &[&str]) -> TelemetryPoint {
-        // Parse timestamp from datetime(utc) or time(millisecond)
-        let timestamp_ms = col_map
-            .get_str(row, "time")
-            .and_then(|s| s.parse::<i64>().ok())
-            .or_else(|| {
-                col_map.get_str(row, "datetime").and_then(|dt| {
-                    // Try parsing "2019-12-14 21:32:44.954" format
-                    NaiveDateTime::parse_from_str(&dt, "%Y-%m-%d %H:%M:%S%.f")
-                        .ok()
-                        .map(|ndt| ndt.and_utc().timestamp_millis())
-                })
-            })
-            .unwrap_or(0);
+        // Parse timestamp - prefer time(millisecond) as relative ms from flight start
+        // If time column exists, use it (with 0 for empty values)
+        // Otherwise use datetime as epoch ms (will be normalized later)
+        let timestamp_ms = if col_map.has_column("time") {
+            // time(millisecond) column exists - use it, default to 0 if empty
+            col_map
+                .get_str(row, "time")
+                .and_then(|s| if s.trim().is_empty() { None } else { s.parse::<i64>().ok() })
+                .unwrap_or(0)
+        } else {
+            // No time column - use datetime as epoch ms (will be normalized to relative later)
+            col_map.get_str(row, "datetime").and_then(|dt| {
+                NaiveDateTime::parse_from_str(&dt, "%Y-%m-%d %H:%M:%S%.f")
+                    .ok()
+                    .map(|ndt| ndt.and_utc().timestamp_millis())
+            }).unwrap_or(0)
+        };
 
         TelemetryPoint {
             timestamp_ms,

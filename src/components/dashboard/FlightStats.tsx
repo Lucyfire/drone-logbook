@@ -197,8 +197,9 @@ export function FlightStats({ data }: FlightStatsProps) {
       const lat = track ? track[1] : latSeries[index];
       const lng = track ? track[0] : lngSeries[index];
       const alt = track ? track[2] : '';
+      // telemetry.time is already in seconds (converted from ms in backend)
       const values = [
-        String(time),
+        String(Math.round(time)),
         lat === null || lat === undefined ? '' : String(lat),
         lng === null || lng === undefined ? '' : String(lng),
         alt === null || alt === undefined ? '' : String(alt),
