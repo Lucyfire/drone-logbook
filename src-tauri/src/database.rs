@@ -741,8 +741,9 @@ impl Database {
                     params![flight_id],
                     |row| row.get(0),
                 )?;
+                // Return empty vec for flights with no telemetry (e.g., manual entries)
                 if c == 0 {
-                    return Err(DatabaseError::FlightNotFound(flight_id));
+                    return Ok(Vec::new());
                 }
                 c
             }

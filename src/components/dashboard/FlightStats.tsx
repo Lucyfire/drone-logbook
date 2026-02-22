@@ -104,11 +104,6 @@ export function FlightStats({ data }: FlightStatsProps) {
   );
 
   const buildCsv = () => {
-    const trackAligned = data.track.length === telemetry.time.length;
-    const latSeries = telemetry.latitude ?? [];
-    const lngSeries = telemetry.longitude ?? [];
-    const distanceToHome = computeDistanceToHomeSeries(telemetry);
-
     // Build metadata JSON for the first row's metadata column
     const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
     const metadata: Record<string, string | number | null | Array<{tag: string, tag_type: string}>> = {
@@ -176,6 +171,34 @@ export function FlightStats({ data }: FlightStatsProps) {
       }
       return value;
     };
+
+    // Handle manual entries with no telemetry - create single row with home coordinates
+    if (!telemetry.time || telemetry.time.length === 0) {
+      const homeLat = flight.homeLat ?? '';
+      const homeLon = flight.homeLon ?? '';
+      const singleRow = [
+        '0', // time_s
+        String(homeLat),
+        String(homeLon),
+        flight.maxAltitude != null ? String(flight.maxAltitude) : '',
+        '0', // distance_to_home at takeoff
+        '', '', // height, vps_height
+        flight.maxAltitude != null ? String(flight.maxAltitude) : '',
+        '', '', '', '', // speed, velocities
+        '', '', '', '', // battery
+        '', '', '', // rc
+        '', '', '', // pitch, roll, yaw
+        '', '', '', '', // rc controls
+        '', '', '', // is_photo, is_video, flight_mode
+        escapeCsv(metadataJson),
+      ].join(',');
+      return [headers.join(','), singleRow].join('\n');
+    }
+
+    const trackAligned = data.track.length === telemetry.time.length;
+    const latSeries = telemetry.latitude ?? [];
+    const lngSeries = telemetry.longitude ?? [];
+    const distanceToHome = computeDistanceToHomeSeries(telemetry);
 
     const getValue = (arr: (number | null)[] | undefined, index: number) => {
       const val = arr?.[index];
@@ -262,6 +285,37 @@ export function FlightStats({ data }: FlightStatsProps) {
 
   const buildGpx = () => {
     const name = flight.displayName || flight.fileName || 'Drone Flight';
+    const escapedName = escapeXml(name);
+    
+    // Handle manual entries with no telemetry - create waypoint at home location
+    if (!telemetry.time || telemetry.time.length === 0) {
+      if (flight.homeLat != null && flight.homeLon != null) {
+        const timeStr = flight.startTime ? `    <time>${new Date(flight.startTime).toISOString()}</time>` : '';
+        const eleStr = flight.maxAltitude != null ? `    <ele>${flight.maxAltitude}</ele>` : '';
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Drone Logbook" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${escapedName}</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+  <wpt lat="${flight.homeLat}" lon="${flight.homeLon}">
+    <name>${escapedName}</name>
+${eleStr}
+${timeStr}
+    <desc>Manual entry - ${escapeXml(flight.aircraftName || 'Unknown Aircraft')}</desc>
+  </wpt>
+</gpx>`;
+      }
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Drone Logbook" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${escapedName}</name>
+    <time>${new Date().toISOString()}</time>
+    <desc>Manual entry with no location data</desc>
+  </metadata>
+</gpx>`;
+    }
+
     // Get flight start time as Unix timestamp in milliseconds
     const startTimeMs = flight.startTime ? new Date(flight.startTime).getTime() : null;
     
@@ -287,11 +341,11 @@ export function FlightStats({ data }: FlightStatsProps) {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Drone Logbook" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
-    <name>${escapeXml(name)}</name>
+    <name>${escapedName}</name>
     <time>${new Date().toISOString()}</time>
   </metadata>
   <trk>
-    <name>${escapeXml(name)}</name>
+    <name>${escapedName}</name>
     <trkseg>
 ${points}
     </trkseg>
@@ -301,15 +355,46 @@ ${points}
 
   const buildKml = () => {
     const name = flight.displayName || flight.fileName || 'Drone Flight';
+    const escapedName = escapeXml(name);
+    
+    // Handle manual entries with no track data - create a point placemark at home location
+    if (!data.track || data.track.length === 0) {
+      if (flight.homeLat != null && flight.homeLon != null) {
+        const alt = flight.maxAltitude ?? 0;
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${escapedName}</name>
+    <description>Manual entry - ${escapeXml(flight.aircraftName || 'Unknown Aircraft')}</description>
+    <Placemark>
+      <name>${escapedName}</name>
+      <description>Takeoff/Landing Location</description>
+      <Point>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>${flight.homeLon},${flight.homeLat},${alt}</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>`;
+      }
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${escapedName}</name>
+    <description>Manual entry with no location data</description>
+  </Document>
+</kml>`;
+    }
+
     const coordinates = data.track
       .map(([lng, lat, alt]) => `${lng},${lat},${alt}`)
       .join(' ');
     return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>${escapeXml(name)}</name>
+    <name>${escapedName}</name>
     <Placemark>
-      <name>${escapeXml(name)}</name>
+      <name>${escapedName}</name>
       <LineString>
         <tessellate>1</tessellate>
         <altitudeMode>relativeToGround</altitudeMode>

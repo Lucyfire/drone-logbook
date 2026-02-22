@@ -41,7 +41,8 @@
       "@tauri-apps/plugin-dialog",
       "@tauri-apps/plugin-fs",
       "@tauri-apps/plugin-log",
-      "@tauri-apps/plugin-shell"
+      "@tauri-apps/plugin-shell",
+      "tauri-plugin-single-instance"
     ],
     "backend": {
       "duckdb_rs": "bundled",
@@ -106,8 +107,10 @@
       "Map: Flight replay with play/pause, seek slider, speed selector (0.5x-16x), and 3D-aware aircraft marker.",
       "Map: Replay telemetry overlay (top-right) showing live-interpolated height, speed, distance, battery, satellites, attitude, and coordinates synced to playback position. RC stick input overlay above playbar with progressive-fill bar indicators for throttle, rudder, elevator, and aileron — theme-aware with visible track rails. Hover tooltip paused during replay.",
       "Map: Aircraft toggle to show/hide replay controls and marker. Satellite maxzoom 18, terrain DEM maxzoom 12.",
-      "Export: CSV/JSON/GPX/KML downloads from flight stats. KML uses relativeToGround altitude mode.",
+      "Export: CSV/JSON/GPX/KML downloads from flight stats. KML uses relativeToGround altitude mode. Manual entries (no telemetry) export with home coordinates: CSV includes single row with metadata, GPX creates waypoint, KML creates point placemark.",
       "FlyCard: Shareable 1080x1080 flight stats image generated from context menu. Captures current map view (satellite/terrain + flight path), overlays flight stats (distance, altitude, duration, speed, aircraft name), and adds branding. Uses html2canvas for rendering. Available only in Flights view (disabled in Overview). Desktop uses native save dialog via Tauri.",
+      "Manual Flight Entry: Create flight records without log files via ManualEntryModal. Collects optional flight title (custom display name), aircraft name, drone/battery serial, date (DayPicker opens downward), time (12h local format, converted to UTC), duration, optional distance/altitude (unit-aware), and takeoff coordinates with validation. Auto-tagged as 'Manual Entry' with smart location tags. Available via centered 'Manual Entry' button in FlightImporter.",
+      "Single Instance Guard: tauri-plugin-single-instance ensures only one desktop app instance runs at a time. Opening a second instance focuses the existing window instead of launching a new one.",
       "Logging: comprehensive debug logging via tauri-plugin-log (desktop) or env_logger (web).",
       "Crash protection: parser uses spawn_blocking + catch_unwind + timeout. Telemetry validated for GPS range, finite values, altitude/speed sanity.",
       "UI polish: theme variables, tag styling for device/serials, modal scrollbar lock.",
@@ -152,6 +155,7 @@
         "src/components/dashboard/WeatherModal.tsx",
         "src/components/dashboard/Overview.tsx",
         "src/components/dashboard/FlyCardGenerator.tsx",
+        "src/components/dashboard/ManualEntryModal.tsx",
         "src/components/ui/Select.tsx",
         "src/components/charts/TelemetryCharts.tsx",
         "src/components/map/FlightMap.tsx"

@@ -15,6 +15,7 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { isWebMode, pickFiles, computeFileHash, getFlights, getSyncConfig, getSyncFiles, syncSingleFile } from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
+import { ManualEntryModal } from './ManualEntryModal';
 
 // Storage keys for sync folder, blacklist, and autoscan
 const SYNC_FOLDER_KEY = 'syncFolderPath';
@@ -101,6 +102,7 @@ export function FlightImporter() {
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
   const [backgroundSyncResult, setBackgroundSyncResult] = useState<string | null>(null);
   const [autoscanEnabled, setAutoscanEnabledState] = useState(() => getAutoscanEnabled());
+  const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const backgroundSyncTriggeredRef = useRef(false);
   const backgroundSyncAbortRef = useRef(false);
 
@@ -887,6 +889,22 @@ export function FlightImporter() {
               </button>
             )}
           </div>
+
+          {/* Manual entry button */}
+          <div className="flex justify-center mt-2">
+            <button
+              onClick={() => setIsManualEntryOpen(true)}
+              className="btn-primary text-sm py-1.5 px-3 force-white flex items-center justify-center gap-1"
+              style={{ width: 'calc(200px + 0.5rem)' }}
+              disabled={isImporting || isBatchProcessing || isSyncing}
+              title="Add a flight manually without a log file"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Manual Entry
+            </button>
+          </div>
           
           {/* Sync folder status */}
           {!isWebMode() && syncFolderPath && (
@@ -961,6 +979,12 @@ export function FlightImporter() {
           )}
         </>
       )}
+
+      {/* Manual Entry Modal */}
+      <ManualEntryModal
+        isOpen={isManualEntryOpen}
+        onClose={() => setIsManualEntryOpen(false)}
+      />
     </div>
   );
 }

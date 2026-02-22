@@ -677,8 +677,16 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
         latitude: lat,
         zoom,
       }));
+    } else if (homeLat != null && homeLon != null) {
+      // Manual entry with no track - center on home location
+      setViewState((prev) => ({
+        ...prev,
+        longitude: homeLon,
+        latitude: homeLat,
+        zoom: 15,
+      }));
     }
-  }, [track]);
+  }, [track, homeLat, homeLon]);
 
   // Smooth the raw GPS track using Catmull-Rom spline interpolation
   const smoothedTrack = useMemo(() => {
@@ -1219,7 +1227,10 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
     }
   }, [enableTerrain, is3D, resolvedTheme]);
 
-  if (track.length === 0) {
+  // Check if we have any location data to display
+  const hasHomeLocation = homeLat != null && homeLon != null && (Math.abs(homeLat) > 0.000001 || Math.abs(homeLon) > 0.000001);
+
+  if (track.length === 0 && !hasHomeLocation) {
     return (
       <div className="h-full flex items-center justify-center bg-drone-dark">
         <p className="text-gray-500">No GPS data available</p>

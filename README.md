@@ -99,8 +99,9 @@
 - **Battery Health Insights**: Per-battery health bars with inline serial renaming, and per‑minute charge usage history timeline with zoom/scroll
 - **Maintenance Tracking**: Set flight and airtime thresholds for batteries and aircraft. Progress bars show usage since last maintenance with color-coded warnings (green → yellow → orange → red). Record maintenance with date picker to reset counters. Multi-select dropdowns for tracking multiple items.
 - **Theme & Units**: Light/Dark/System theme and Metric/Imperial units
-- **Exports**: Direct CSV, JSON, GPX, and KML export from the flight stats bar
+- **Exports**: Direct CSV, JSON, GPX, and KML export from the flight stats bar. Manual entries export with location point and metadata.
 - **FlyCard Generator**: Create shareable 1080x1080 social media images with flight stats overlay, map background with flight path, and branding, perfect for sharing on Instagram or Strava-style posts
+- **Manual Flight Entry**: Record flights without log files by entering an optional flight title (display name), aircraft details, date/time, duration, coordinates, and optional distance/altitude. Auto-tagged as "Manual Entry" with smart location tags.
 - **Backup & Restore**: Export your entire database to a portable backup file and restore it on any instance - works on both desktop and Docker
 
 ## Accessing flight log files

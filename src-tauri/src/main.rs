@@ -295,6 +295,119 @@ mod tauri_app {
         })
     }
 
+    /// Create a manual flight entry without importing a log file
+    /// Used for flights where no log file is available
+    #[tauri::command]
+    pub async fn create_manual_flight(
+        flight_title: Option<String>,
+        aircraft_name: String,
+        drone_serial: String,
+        battery_serial: String,
+        start_time: String, // ISO 8601 format
+        duration_secs: f64,
+        total_distance: Option<f64>,
+        max_altitude: Option<f64>,
+        home_lat: f64,
+        home_lon: f64,
+        notes: Option<String>,
+        state: State<'_, AppState>,
+    ) -> Result<ImportResult, String> {
+        use chrono::DateTime;
+        
+        log::info!("Creating manual flight entry: {} @ {}", aircraft_name, start_time);
+
+        // Parse the start time
+        let parsed_start_time = DateTime::parse_from_rfc3339(&start_time)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .map_err(|e| format!("Invalid start time format: {}", e))?;
+
+        // Calculate end time
+        let end_time = parsed_start_time + chrono::Duration::seconds(duration_secs as i64);
+
+        // Create flight metadata
+        // Use flight_title if provided, otherwise fallback to aircraft_name
+        let display_name = flight_title
+            .as_ref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.clone())
+            .unwrap_or_else(|| aircraft_name.clone());
+        
+        let flight_id = state.db.generate_flight_id();
+        let metadata = crate::models::FlightMetadata {
+            id: flight_id,
+            file_name: format!("manual_entry_{}.log", flight_id),
+            display_name,
+            file_hash: None, // Manual entries have no file hash
+            drone_model: Some(format!("Manual Entry ({})", aircraft_name)),
+            drone_serial: Some(drone_serial.trim().to_uppercase()),
+            aircraft_name: Some(aircraft_name),
+            battery_serial: Some(battery_serial.trim().to_uppercase()),
+            start_time: Some(parsed_start_time),
+            end_time: Some(end_time),
+            duration_secs: Some(duration_secs),
+            total_distance,
+            max_altitude,
+            max_speed: None,
+            home_lat: Some(home_lat),
+            home_lon: Some(home_lon),
+            point_count: 0, // No telemetry points for manual entries
+        };
+
+        // Insert flight
+        state
+            .db
+            .insert_flight(&metadata)
+            .map_err(|e| format!("Failed to insert flight: {}", e))?;
+
+        // Update notes if provided
+        if let Some(notes_text) = notes {
+            if !notes_text.trim().is_empty() {
+                state
+                    .db
+                    .update_flight_notes(flight_id, Some(&notes_text))
+                    .map_err(|e| format!("Failed to add notes: {}", e))?;
+            }
+        }
+
+        // Add "Manual Entry" tag
+        let tags = vec!["Manual Entry".to_string()];
+        if let Err(e) = state.db.insert_flight_tags(flight_id, &tags) {
+            log::warn!("Failed to add tags: {}", e);
+        }
+
+        // Generate smart tags based on location
+        let stats = crate::models::FlightStats {
+            duration_secs,
+            total_distance_m: total_distance.unwrap_or(0.0),
+            max_altitude_m: max_altitude.unwrap_or(0.0),
+            max_speed_ms: 0.0,
+            avg_speed_ms: 0.0,
+            min_battery: 100,
+            home_location: Some([home_lon, home_lat]),
+            max_distance_from_home_m: 0.0,
+            start_battery_percent: None,
+            end_battery_percent: None,
+            start_battery_temp: None,
+        };
+        
+        let smart_tags = crate::parser::LogParser::generate_smart_tags(&metadata, &stats);
+        if !smart_tags.is_empty() {
+            if let Err(e) = state.db.insert_flight_tags(flight_id, &smart_tags) {
+                log::warn!("Failed to add smart tags: {}", e);
+            }
+        }
+
+        log::info!("Successfully created manual flight entry with ID: {}", flight_id);
+
+        Ok(ImportResult {
+            success: true,
+            flight_id: Some(flight_id),
+            message: "Manual flight entry created successfully".to_string(),
+            point_count: 0,
+            file_hash: None,
+        })
+    }
+
     /// Compute SHA256 hash of a file without importing it
     /// Used to check if a file is blacklisted before importing
     #[tauri::command]
@@ -790,6 +903,7 @@ mod tauri_app {
             })
             .invoke_handler(tauri::generate_handler![
                 import_log,
+                create_manual_flight,
                 compute_file_hash,
                 get_flights,
                 get_flight_data,

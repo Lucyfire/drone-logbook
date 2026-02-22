@@ -10,6 +10,7 @@
 - [Getting Started](#getting-started)
 - [Interface Layout](#interface-layout)
 - [Importing Flight Logs](#importing-flight-logs)
+- [Manual Flight Entry](#manual-flight-entry)
 - [Flight List and Selection](#flight-list-and-selection)
 - [Filters and Search](#filters-and-search)
 - [Tags System](#tags-system)
@@ -40,8 +41,10 @@ Drone Logbook is a high-performance application for analyzing drone flight logs.
 | **Smart Tagging** | Automatic descriptive tags based on flight characteristics |
 | **Advanced Filtering** | Powerful filtering, search, and sorting options |
 | **Battery Tracking** | Health monitoring and maintenance scheduling |
+| **Manual Entry** | Record flights without log files |
 | **Multiple Exports** | Export to CSV, JSON, GPX, and KML formats |
 | **Full Backup** | Complete database backup and restore |
+| **Single Instance** | Only one app window runs at a time (desktop) |
 
 ---
 
@@ -139,6 +142,51 @@ During import, you will see:
 - Current file being processed
 - Progress counter (X of Y files)
 - Any errors or warnings
+
+---
+
+## Manual Flight Entry
+
+For flights where no log file is available (e.g., flights with other apps, flights before you started logging, or when logs were lost), you can manually create flight records.
+
+### Accessing Manual Entry
+
+Click the **Manual Entry** button in the Import section of the sidebar.
+
+### Required Information
+
+| Field | Description |
+|-------|-------------|
+| **Flight Title** | Optional custom display name (defaults to Aircraft Name if left blank) |
+| **Aircraft Name** | Name or model of the drone used |
+| **Drone Serial** | Serial number of the aircraft |
+| **Battery Serial** | Serial number of the battery used |
+| **Date** | Flight date (calendar picker) |
+| **Time** | Takeoff time in 12-hour format (converted to UTC internally) |
+| **Duration** | Flight duration in seconds |
+| **Home Latitude** | Takeoff location latitude (-90 to 90) |
+| **Home Longitude** | Takeoff location longitude (-180 to 180) |
+
+### Optional Information
+
+| Field | Description |
+|-------|-------------|
+| **Total Distance** | Distance traveled (in current units) |
+| **Max Altitude** | Maximum altitude reached (in current units) |
+| **Notes** | Additional notes about the flight |
+
+### After Creating a Manual Entry
+
+- The flight is automatically tagged with "Manual Entry"
+- Smart location tags (city, country, continent) are generated from the coordinates
+- The flight appears in your flight list and overview statistics
+- Manual entries can be exported, but since they have no telemetry data:
+  - **CSV** exports contain a single row with home coordinates and metadata
+  - **GPX** exports contain a waypoint at the home location
+  - **KML** exports contain a point placemark at the home location
+
+> [!NOTE]
+> Manual entries have no telemetry data, so the charts panel will be empty and the map will show only the home location marker.
 
 ---
 
@@ -289,6 +337,7 @@ When enabled, the app automatically generates descriptive tags during import:
 | **Country** | Reverse geocoded from takeoff coordinates |
 | **Continent** | Reverse geocoded from takeoff coordinates |
 | **Litchi** | Flight was imported from Litchi CSV |
+| **Manual Entry** | Flight was created via manual entry (no log file) |
 
 ### Manual Tags
 
@@ -636,6 +685,15 @@ From the flight list, you can export all filtered flights:
 - Altitude data
 - Compatible with Google Earth and other mapping apps
 
+#### Manual Entry Exports
+
+Since manual entries have no telemetry data, exports are handled specially:
+
+- **CSV**: Contains a single row with home coordinates and all available metadata
+- **JSON**: Contains flight metadata (no telemetry arrays)
+- **GPX**: Contains a waypoint at the takeoff location
+- **KML**: Contains a point placemark at the takeoff location
+
 ---
 
 ## Settings
@@ -782,6 +840,12 @@ When a dropdown is open:
 - Decryption keys are cached locally after first use
 - No telemetry or tracking
 - Use "Hide Serial Numbers" for screenshots
+
+### Single Instance (Desktop)
+
+- The desktop app ensures only one instance runs at a time
+- Opening a second instance will focus the existing window instead of launching a new one
+- This prevents database conflicts and accidental duplicate windows
 
 ---
 

@@ -206,6 +206,134 @@ async fn import_log(
     }))
 }
 
+/// Request payload for manual flight creation
+#[derive(Deserialize)]
+struct CreateManualFlightPayload {
+    flight_title: Option<String>,
+    aircraft_name: String,
+    drone_serial: String,
+    battery_serial: String,
+    start_time: String, // ISO 8601 format
+    duration_secs: f64,
+    total_distance: Option<f64>,
+    max_altitude: Option<f64>,
+    home_lat: f64,
+    home_lon: f64,
+    notes: Option<String>,
+}
+
+/// POST /api/manual_flight — Create a manual flight entry without log file
+async fn create_manual_flight(
+    AxumState(state): AxumState<WebAppState>,
+    Json(payload): Json<CreateManualFlightPayload>,
+) -> Result<Json<ImportResult>, (StatusCode, Json<ErrorResponse>)> {
+    use chrono::DateTime;
+
+    log::info!("Creating manual flight entry: {} @ {}", payload.aircraft_name, payload.start_time);
+
+    // Validate required fields
+    if payload.aircraft_name.trim().is_empty() {
+        return Err(err_response(StatusCode::BAD_REQUEST, "Aircraft name is required"));
+    }
+    if payload.drone_serial.trim().is_empty() {
+        return Err(err_response(StatusCode::BAD_REQUEST, "Drone serial is required"));
+    }
+    if payload.battery_serial.trim().is_empty() {
+        return Err(err_response(StatusCode::BAD_REQUEST, "Battery serial is required"));
+    }
+
+    // Parse the start time
+    let parsed_start_time = DateTime::parse_from_rfc3339(&payload.start_time)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .map_err(|e| err_response(StatusCode::BAD_REQUEST, format!("Invalid start time format: {}", e)))?;
+
+    // Calculate end time
+    let end_time = parsed_start_time + chrono::Duration::seconds(payload.duration_secs as i64);
+
+    // Create flight metadata
+    // Use flight_title if provided, otherwise fallback to aircraft_name
+    let display_name = payload.flight_title
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| payload.aircraft_name.clone());
+    
+    let flight_id = state.db.generate_flight_id();
+    let metadata = crate::models::FlightMetadata {
+        id: flight_id,
+        file_name: format!("manual_entry_{}.log", flight_id),
+        display_name,
+        file_hash: None,
+        drone_model: Some(format!("Manual Entry ({})", payload.aircraft_name)),
+        drone_serial: Some(payload.drone_serial.trim().to_uppercase()),
+        aircraft_name: Some(payload.aircraft_name.clone()),
+        battery_serial: Some(payload.battery_serial.trim().to_uppercase()),
+        start_time: Some(parsed_start_time),
+        end_time: Some(end_time),
+        duration_secs: Some(payload.duration_secs),
+        total_distance: payload.total_distance,
+        max_altitude: payload.max_altitude,
+        max_speed: None,
+        home_lat: Some(payload.home_lat),
+        home_lon: Some(payload.home_lon),
+        point_count: 0,
+    };
+
+    // Insert flight
+    state
+        .db
+        .insert_flight(&metadata)
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to insert flight: {}", e)))?;
+
+    // Update notes if provided
+    if let Some(notes_text) = &payload.notes {
+        if !notes_text.trim().is_empty() {
+            state
+                .db
+                .update_flight_notes(flight_id, Some(notes_text))
+                .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add notes: {}", e)))?;
+        }
+    }
+
+    // Add "Manual Entry" tag
+    let tags = vec!["Manual Entry".to_string()];
+    if let Err(e) = state.db.insert_flight_tags(flight_id, &tags) {
+        log::warn!("Failed to add tags: {}", e);
+    }
+
+    // Generate smart tags based on location
+    let stats = crate::models::FlightStats {
+        duration_secs: payload.duration_secs,
+        total_distance_m: payload.total_distance.unwrap_or(0.0),
+        max_altitude_m: payload.max_altitude.unwrap_or(0.0),
+        max_speed_ms: 0.0,
+        avg_speed_ms: 0.0,
+        min_battery: 100,
+        home_location: Some([payload.home_lon, payload.home_lat]),
+        max_distance_from_home_m: 0.0,
+        start_battery_percent: None,
+        end_battery_percent: None,
+        start_battery_temp: None,
+    };
+    
+    let smart_tags = crate::parser::LogParser::generate_smart_tags(&metadata, &stats);
+    if !smart_tags.is_empty() {
+        if let Err(e) = state.db.insert_flight_tags(flight_id, &smart_tags) {
+            log::warn!("Failed to add smart tags: {}", e);
+        }
+    }
+
+    log::info!("Successfully created manual flight entry with ID: {}", flight_id);
+
+    Ok(Json(ImportResult {
+        success: true,
+        flight_id: Some(flight_id),
+        message: "Manual flight entry created successfully".to_string(),
+        point_count: 0,
+        file_hash: None,
+    }))
+}
+
 /// GET /api/flights — List all flights
 async fn get_flights(
     AxumState(state): AxumState<WebAppState>,
@@ -1209,6 +1337,7 @@ pub fn build_router(state: WebAppState) -> Router {
 
     Router::new()
         .route("/api/import", post(import_log))
+        .route("/api/manual_flight", post(create_manual_flight))
         .route("/api/flights", get(get_flights))
         .route("/api/flight_data", get(get_flight_data))
         .route("/api/overview", get(get_overview_stats))

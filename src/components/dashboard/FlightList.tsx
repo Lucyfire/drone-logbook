@@ -700,11 +700,6 @@ export function FlightList({
 
   const buildCsv = (data: FlightDataResponse): string => {
     const { telemetry, flight } = data;
-    if (!telemetry.time || telemetry.time.length === 0) return '';
-
-    const trackAligned = data.track.length === telemetry.time.length;
-    const latSeries = telemetry.latitude ?? [];
-    const lngSeries = telemetry.longitude ?? [];
     
     // Build metadata JSON for the first row's metadata column
     const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
@@ -732,43 +727,6 @@ export function FlightList({
       Object.entries(metadata).filter(([_, v]) => v != null)
     );
     const metadataJson = JSON.stringify(cleanMetadata);
-
-    // Calculate distance to home
-    const computeDistanceToHome = () => {
-      const lats = telemetry.latitude ?? [];
-      const lngs = telemetry.longitude ?? [];
-      let homeLat: number | null = null;
-      let homeLng: number | null = null;
-      for (let i = 0; i < lats.length; i += 1) {
-        const lat = lats[i];
-        const lng = lngs[i];
-        if (typeof lat === 'number' && typeof lng === 'number') {
-          homeLat = lat;
-          homeLng = lng;
-          break;
-        }
-      }
-      if (homeLat === null || homeLng === null) {
-        return telemetry.time.map(() => null);
-      }
-
-      return telemetry.time.map((_, index) => {
-        const lat = lats[index];
-        const lng = lngs[index];
-        if (typeof lat !== 'number' || typeof lng !== 'number') return null;
-        const toRad = (value: number) => (value * Math.PI) / 180;
-        const r = 6371000;
-        const dLat = toRad(lat - homeLat);
-        const dLon = toRad(lng - homeLng);
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(toRad(homeLat)) * Math.cos(toRad(lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return r * c;
-      });
-    };
-
-    const distanceToHome = computeDistanceToHome();
 
     const headers = [
       'time_s',
@@ -810,6 +768,70 @@ export function FlightList({
       }
       return value;
     };
+
+    // Handle manual entries with no telemetry - create single row with home coordinates
+    if (!telemetry.time || telemetry.time.length === 0) {
+      const homeLat = flight.homeLat ?? '';
+      const homeLon = flight.homeLon ?? '';
+      const singleRow = [
+        '0', // time_s
+        String(homeLat),
+        String(homeLon),
+        flight.maxAltitude != null ? String(flight.maxAltitude) : '',
+        '0', // distance_to_home at takeoff
+        '', '', // height, vps_height
+        flight.maxAltitude != null ? String(flight.maxAltitude) : '',
+        '', '', '', '', // speed, velocities
+        '', '', '', '', // battery
+        '', '', '', // rc
+        '', '', '', // pitch, roll, yaw
+        '', '', '', '', // rc controls
+        '', '', '', // is_photo, is_video, flight_mode
+        escapeCsv(metadataJson),
+      ].join(',');
+      return [headers.join(','), singleRow].join('\n');
+    }
+
+    const trackAligned = data.track.length === telemetry.time.length;
+    const latSeries = telemetry.latitude ?? [];
+    const lngSeries = telemetry.longitude ?? [];
+
+    // Calculate distance to home
+    const computeDistanceToHome = () => {
+      const lats = telemetry.latitude ?? [];
+      const lngs = telemetry.longitude ?? [];
+      let homeLat: number | null = null;
+      let homeLng: number | null = null;
+      for (let i = 0; i < lats.length; i += 1) {
+        const lat = lats[i];
+        const lng = lngs[i];
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          homeLat = lat;
+          homeLng = lng;
+          break;
+        }
+      }
+      if (homeLat === null || homeLng === null) {
+        return telemetry.time.map(() => null);
+      }
+
+      return telemetry.time.map((_, index) => {
+        const lat = lats[index];
+        const lng = lngs[index];
+        if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+        const toRad = (value: number) => (value * Math.PI) / 180;
+        const r = 6371000;
+        const dLat = toRad(lat - homeLat);
+        const dLon = toRad(lng - homeLng);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(toRad(homeLat)) * Math.cos(toRad(lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return r * c;
+      });
+    };
+
+    const distanceToHome = computeDistanceToHome();
 
     const getValue = (arr: (number | null)[] | undefined, index: number) => {
       const val = arr?.[index];
@@ -900,7 +922,32 @@ export function FlightList({
   };
 
   const buildGpx = (data: FlightDataResponse): string => {
-    if (!data.telemetry.time || data.telemetry.time.length === 0) return '';
+    const { flight } = data;
+    const flightName = escapeXml(flight.displayName || flight.fileName || 'Flight');
+    
+    // Handle manual entries with no telemetry - create waypoint at home location
+    if (!data.telemetry.time || data.telemetry.time.length === 0) {
+      if (flight.homeLat != null && flight.homeLon != null) {
+        const timeStr = flight.startTime ? `<time>${new Date(flight.startTime).toISOString()}</time>` : '';
+        const eleStr = flight.maxAltitude != null ? `<ele>${flight.maxAltitude}</ele>` : '';
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Drone Logbook">
+  <wpt lat="${flight.homeLat}" lon="${flight.homeLon}">
+    <name>${flightName}</name>
+    ${eleStr}
+    ${timeStr}
+    <desc>Manual entry - ${flight.aircraftName || 'Unknown Aircraft'}</desc>
+  </wpt>
+</gpx>`;
+      }
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Drone Logbook">
+  <metadata>
+    <name>${flightName}</name>
+    <desc>Manual entry with no location data</desc>
+  </metadata>
+</gpx>`;
+    }
 
     // Get flight start time as Unix timestamp in milliseconds
     const startTimeMs = data.flight.startTime ? new Date(data.flight.startTime).getTime() : null;
@@ -927,7 +974,7 @@ export function FlightList({
     return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Drone Logbook">
   <trk>
-    <name>${escapeXml((data.flight as any).original_filename || 'Flight')}</name>
+    <name>${flightName}</name>
     <trkseg>
 ${points}
     </trkseg>
@@ -936,7 +983,37 @@ ${points}
   };
 
   const buildKml = (data: FlightDataResponse): string => {
-    if (!data.track || data.track.length === 0) return '';
+    const { flight } = data;
+    const flightName = escapeXml(flight.displayName || flight.fileName || 'Flight');
+    
+    // Handle manual entries with no track data - create a point placemark at home location
+    if (!data.track || data.track.length === 0) {
+      if (flight.homeLat != null && flight.homeLon != null) {
+        const alt = flight.maxAltitude ?? 0;
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${flightName}</name>
+    <description>Manual entry - ${escapeXml(flight.aircraftName || 'Unknown Aircraft')}</description>
+    <Placemark>
+      <name>${flightName}</name>
+      <description>Takeoff/Landing Location</description>
+      <Point>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>${flight.homeLon},${flight.homeLat},${alt}</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>`;
+      }
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${flightName}</name>
+    <description>Manual entry with no location data</description>
+  </Document>
+</kml>`;
+    }
 
     const coordinates = data.track
       .map(([lng, lat, alt]) => {
@@ -949,7 +1026,7 @@ ${points}
     return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>${escapeXml((data.flight as any).original_filename || 'Flight')}</name>
+    <name>${flightName}</name>
     <Placemark>
       <name>Flight Path</name>
       <LineString>

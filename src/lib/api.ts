@@ -119,6 +119,61 @@ export async function importLog(
 }
 
 /**
+ * Create a manual flight entry without a log file.
+ * Used for flights that don't have telemetry data available.
+ */
+export interface CreateManualFlightParams {
+  flightTitle?: string; // Optional custom display name
+  aircraftName: string;
+  droneSerial: string;
+  batterySerial: string;
+  startTime: string; // ISO 8601 format
+  durationSecs: number;
+  totalDistance?: number; // in meters
+  maxAltitude?: number; // in meters
+  homeLat: number;
+  homeLon: number;
+  notes?: string;
+}
+
+export async function createManualFlight(
+  params: CreateManualFlightParams,
+): Promise<ImportResult> {
+  if (isWeb) {
+    return fetchJson<ImportResult>('/manual_flight', {
+      method: 'POST',
+      body: JSON.stringify({
+        flight_title: params.flightTitle ?? null,
+        aircraft_name: params.aircraftName,
+        drone_serial: params.droneSerial,
+        battery_serial: params.batterySerial,
+        start_time: params.startTime,
+        duration_secs: params.durationSecs,
+        total_distance: params.totalDistance ?? null,
+        max_altitude: params.maxAltitude ?? null,
+        home_lat: params.homeLat,
+        home_lon: params.homeLon,
+        notes: params.notes ?? null,
+      }),
+    });
+  }
+  const invoke = await getTauriInvoke();
+  return invoke('create_manual_flight', {
+    flightTitle: params.flightTitle ?? null,
+    aircraftName: params.aircraftName,
+    droneSerial: params.droneSerial,
+    batterySerial: params.batterySerial,
+    startTime: params.startTime,
+    durationSecs: params.durationSecs,
+    totalDistance: params.totalDistance ?? null,
+    maxAltitude: params.maxAltitude ?? null,
+    homeLat: params.homeLat,
+    homeLon: params.homeLon,
+    notes: params.notes ?? null,
+  }) as Promise<ImportResult>;
+}
+
+/**
  * Compute file hash without importing.
  * Tauri-only: used to check blacklist before importing.
  */
