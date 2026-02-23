@@ -82,13 +82,16 @@ interface FlightState {
 
   // Battery name mapping (serial -> custom display name)
   batteryNameMap: Record<string, string>;
-  renameBattery: (serial: string, displayName: string) => void;
+  renameBattery: (serial: string, displayName: string) => Promise<void>;
   getBatteryDisplayName: (serial: string) => string;
 
   // Drone name mapping (serial -> custom display name)
   droneNameMap: Record<string, string>;
-  renameDrone: (serial: string, displayName: string) => void;
+  renameDrone: (serial: string, displayName: string) => Promise<void>;
   getDroneDisplayName: (serial: string, fallbackName: string) => string;
+
+  // Load equipment names from server (for cross-device sync in web mode)
+  loadEquipmentNames: () => Promise<void>;
 
   // Hide serial numbers (privacy mode)
   hideSerialNumbers: boolean;
@@ -260,6 +263,9 @@ export const useFlightStore = create<FlightState>((set, get) => ({
 
       // Load all tags in background
       get().loadAllTags();
+      
+      // Load equipment names from server (for cross-device sync)
+      get().loadEquipmentNames();
 
       // Auto-select last used flight if available (avoid heavy load on fresh startup)
       const selectedFlightId = get().selectedFlightId;
@@ -693,19 +699,33 @@ export const useFlightStore = create<FlightState>((set, get) => ({
     }
   },
 
-  renameBattery: (serial: string, displayName: string) => {
+  renameBattery: async (serial: string, displayName: string) => {
     const normalizedSerial = normalizeSerial(serial);
     const map = { ...get().batteryNameMap };
-    if (displayName.trim() === '' || displayName.trim() === normalizedSerial) {
+    const trimmedName = displayName.trim();
+    const shouldDelete = trimmedName === '' || trimmedName === normalizedSerial;
+    
+    if (shouldDelete) {
       // Reset to original serial name
       delete map[normalizedSerial];
     } else {
-      map[normalizedSerial] = displayName.trim();
+      map[normalizedSerial] = trimmedName;
     }
+    
+    // Optimistically update local state first
+    set({ batteryNameMap: map });
+    
+    // Cache in localStorage for quick retrieval on page load
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('batteryNameMap', JSON.stringify(map));
     }
-    set({ batteryNameMap: map });
+    
+    // Persist to server for cross-device sync
+    try {
+      await api.setEquipmentName(normalizedSerial, 'battery', shouldDelete ? '' : trimmedName);
+    } catch (err) {
+      console.error('Failed to save battery name to server:', err);
+    }
   },
 
   getBatteryDisplayName: (serial: string) => {
@@ -715,24 +735,60 @@ export const useFlightStore = create<FlightState>((set, get) => ({
     return get().hideSerialNumbers ? '*****' : normalizedSerial;
   },
 
-  renameDrone: (serial: string, displayName: string) => {
+  renameDrone: async (serial: string, displayName: string) => {
     const normalizedSerial = normalizeSerial(serial);
     const map = { ...get().droneNameMap };
-    if (displayName.trim() === '') {
+    const trimmedName = displayName.trim();
+    const shouldDelete = trimmedName === '';
+    
+    if (shouldDelete) {
       // Reset to original name
       delete map[normalizedSerial];
     } else {
-      map[normalizedSerial] = displayName.trim();
+      map[normalizedSerial] = trimmedName;
     }
+    
+    // Optimistically update local state first
+    set({ droneNameMap: map });
+    
+    // Cache in localStorage for quick retrieval on page load
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('droneNameMap', JSON.stringify(map));
     }
-    set({ droneNameMap: map });
+    
+    // Persist to server for cross-device sync
+    try {
+      await api.setEquipmentName(normalizedSerial, 'aircraft', shouldDelete ? '' : trimmedName);
+    } catch (err) {
+      console.error('Failed to save aircraft name to server:', err);
+    }
   },
 
   getDroneDisplayName: (serial: string, fallbackName: string) => {
     const normalizedSerial = normalizeSerial(serial);
     return get().droneNameMap[normalizedSerial] || fallbackName;
+  },
+
+  loadEquipmentNames: async () => {
+    try {
+      const response = await api.getEquipmentNames();
+      
+      // Merge server data with local state (server wins for conflicts)
+      const batteryNameMap = { ...response.battery_names };
+      const droneNameMap = { ...response.aircraft_names };
+      
+      // Update state
+      set({ batteryNameMap, droneNameMap });
+      
+      // Update localStorage cache
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('batteryNameMap', JSON.stringify(batteryNameMap));
+        localStorage.setItem('droneNameMap', JSON.stringify(droneNameMap));
+      }
+    } catch (err) {
+      console.error('Failed to load equipment names from server:', err);
+      // Keep using localStorage fallback values set at initialization
+    }
   },
 
   setHideSerialNumbers: (hide: boolean) => {

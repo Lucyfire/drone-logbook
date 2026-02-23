@@ -628,6 +628,24 @@ mod tauri_app {
     }
 
     #[tauri::command]
+    pub async fn get_equipment_names(state: State<'_, AppState>) -> Result<(Vec<(String, String)>, Vec<(String, String)>), String> {
+        state.db.get_all_equipment_names()
+            .map_err(|e| format!("Failed to get equipment names: {}", e))
+    }
+
+    #[tauri::command]
+    pub async fn set_equipment_name(
+        serial: String,
+        equipment_type: String,
+        display_name: String,
+        state: State<'_, AppState>,
+    ) -> Result<bool, String> {
+        state.db.set_equipment_name(&serial, &equipment_type, &display_name)
+            .map(|_| true)
+            .map_err(|e| format!("Failed to set equipment name: {}", e))
+    }
+
+    #[tauri::command]
     pub async fn export_backup(dest_path: String, state: State<'_, AppState>) -> Result<bool, String> {
         let path = std::path::PathBuf::from(&dest_path);
         log::info!("Exporting database backup to: {}", dest_path);
@@ -944,6 +962,8 @@ mod tauri_app {
                 remove_api_key,
                 get_app_data_dir,
                 get_app_log_dir,
+                get_equipment_names,
+                set_equipment_name,
                 export_backup,
                 import_backup,
                 add_flight_tag,

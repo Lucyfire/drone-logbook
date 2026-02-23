@@ -299,6 +299,44 @@ export async function getAppLogDir(): Promise<string> {
 }
 
 // ============================================================================
+// Equipment Names (Battery/Aircraft custom display names)
+// ============================================================================
+
+export interface EquipmentNamesResponse {
+  battery_names: Record<string, string>;
+  aircraft_names: Record<string, string>;
+}
+
+export async function getEquipmentNames(): Promise<EquipmentNamesResponse> {
+  if (isWeb) {
+    return fetchJson<EquipmentNamesResponse>('/equipment_names');
+  }
+  const invoke = await getTauriInvoke();
+  const result = await invoke('get_equipment_names') as [Array<[string, string]>, Array<[string, string]>];
+  // Convert from [[serial, name], ...] to {serial: name, ...}
+  const battery_names: Record<string, string> = {};
+  const aircraft_names: Record<string, string> = {};
+  for (const [serial, name] of result[0]) {
+    battery_names[serial] = name;
+  }
+  for (const [serial, name] of result[1]) {
+    aircraft_names[serial] = name;
+  }
+  return { battery_names, aircraft_names };
+}
+
+export async function setEquipmentName(serial: string, equipmentType: 'battery' | 'aircraft', displayName: string): Promise<boolean> {
+  if (isWeb) {
+    return fetchJson<boolean>('/equipment_names', {
+      method: 'POST',
+      body: JSON.stringify({ serial, equipment_type: equipmentType, display_name: displayName }),
+    });
+  }
+  const invoke = await getTauriInvoke();
+  return invoke('set_equipment_name', { serial, equipmentType, displayName }) as Promise<boolean>;
+}
+
+// ============================================================================
 // Tag Management
 // ============================================================================
 

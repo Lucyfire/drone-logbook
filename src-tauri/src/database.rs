@@ -275,6 +275,17 @@ impl Database {
             );
 
             -- ============================================================
+            -- EQUIPMENT_NAMES TABLE: Custom display names for batteries/aircraft
+            -- ============================================================
+            CREATE TABLE IF NOT EXISTS equipment_names (
+                serial          VARCHAR NOT NULL,        -- battery or aircraft serial number
+                equipment_type  VARCHAR NOT NULL,        -- 'battery' or 'aircraft'
+                display_name    VARCHAR NOT NULL,
+                updated_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (serial, equipment_type)
+            );
+
+            -- ============================================================
             -- FLIGHT_MESSAGES TABLE: App messages (tips/warnings) per flight
             -- ============================================================
             CREATE TABLE IF NOT EXISTS flight_messages (
@@ -1425,6 +1436,54 @@ impl Database {
             params![flight_id],
         )?;
         Ok(())
+    }
+
+    // ========================================================================
+    // EQUIPMENT NAMES
+    // ========================================================================
+
+    /// Set a custom display name for a battery or aircraft
+    pub fn set_equipment_name(&self, serial: &str, equipment_type: &str, display_name: &str) -> Result<(), DatabaseError> {
+        let conn = self.conn.lock().unwrap();
+        let serial_upper = serial.trim().to_uppercase();
+        
+        if display_name.trim().is_empty() {
+            // Empty name = delete the mapping
+            conn.execute(
+                "DELETE FROM equipment_names WHERE serial = ? AND equipment_type = ?",
+                params![serial_upper, equipment_type],
+            )?;
+            log::info!("Removed {} name for serial {}", equipment_type, serial_upper);
+        } else {
+            conn.execute(
+                "INSERT OR REPLACE INTO equipment_names (serial, equipment_type, display_name, updated_at) 
+                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                params![serial_upper, equipment_type, display_name.trim()],
+            )?;
+            log::info!("Set {} name for serial {}: {}", equipment_type, serial_upper, display_name.trim());
+        }
+        Ok(())
+    }
+
+    /// Get all equipment names of a given type (battery or aircraft)
+    pub fn get_equipment_names(&self, equipment_type: &str) -> Result<Vec<(String, String)>, DatabaseError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT serial, display_name FROM equipment_names WHERE equipment_type = ? ORDER BY serial"
+        )?;
+        let names = stmt
+            .query_map(params![equipment_type], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(names)
+    }
+
+    /// Get all equipment names (both batteries and aircraft) as a map
+    pub fn get_all_equipment_names(&self) -> Result<(Vec<(String, String)>, Vec<(String, String)>), DatabaseError> {
+        let battery_names = self.get_equipment_names("battery")?;
+        let aircraft_names = self.get_equipment_names("aircraft")?;
+        Ok((battery_names, aircraft_names))
     }
 
     /// Check if a file has already been imported (by hash)

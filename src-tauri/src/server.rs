@@ -1349,6 +1349,48 @@ async fn sync_from_folder(
 }
 
 // ============================================================================
+// EQUIPMENT NAMES
+// ============================================================================
+
+/// Response for equipment names
+#[derive(Serialize)]
+struct EquipmentNamesResponse {
+    battery_names: std::collections::HashMap<String, String>,
+    aircraft_names: std::collections::HashMap<String, String>,
+}
+
+/// GET /api/equipment_names — Get all custom equipment names
+async fn get_equipment_names(
+    AxumState(state): AxumState<WebAppState>,
+) -> Result<Json<EquipmentNamesResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (battery_list, aircraft_list) = state.db.get_all_equipment_names()
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get equipment names: {}", e)))?;
+    
+    let battery_names: std::collections::HashMap<String, String> = battery_list.into_iter().collect();
+    let aircraft_names: std::collections::HashMap<String, String> = aircraft_list.into_iter().collect();
+    
+    Ok(Json(EquipmentNamesResponse { battery_names, aircraft_names }))
+}
+
+/// Payload for setting an equipment name
+#[derive(Deserialize)]
+struct SetEquipmentNamePayload {
+    serial: String,
+    equipment_type: String,  // "battery" or "aircraft"
+    display_name: String,
+}
+
+/// POST /api/equipment_names — Set a custom equipment name
+async fn set_equipment_name(
+    AxumState(state): AxumState<WebAppState>,
+    Json(payload): Json<SetEquipmentNamePayload>,
+) -> Result<Json<bool>, (StatusCode, Json<ErrorResponse>)> {
+    state.db.set_equipment_name(&payload.serial, &payload.equipment_type, &payload.display_name)
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to set equipment name: {}", e)))?;
+    Ok(Json(true))
+}
+
+// ============================================================================
 // SERVER SETUP
 // ============================================================================
 
@@ -1392,6 +1434,8 @@ pub fn build_router(state: WebAppState) -> Router {
         .route("/api/sync/files", get(get_sync_files))
         .route("/api/sync/file", post(sync_single_file))
         .route("/api/sync", post(sync_from_folder))
+        .route("/api/equipment_names", get(get_equipment_names))
+        .route("/api/equipment_names", post(set_equipment_name))
         .layer(cors)
         .layer(DefaultBodyLimit::max(250 * 1024 * 1024)) // 250 MB
         .with_state(state)

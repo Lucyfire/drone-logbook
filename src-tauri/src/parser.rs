@@ -152,7 +152,6 @@ impl<'a> LogParser<'a> {
 
         // Read the file
         let file_data = fs::read(file_path)?;
-        log::debug!("File read into memory: {} bytes", file_data.len());
 
         // Parse with dji-log-parser inside spawn_blocking + catch_unwind
         // This prevents a panicking/hanging parser from killing the app
@@ -185,14 +184,12 @@ impl<'a> LogParser<'a> {
             }
         };
 
-        log::info!(
-            "DJILog parsed: version={}, product={:?}, aircraft_sn={}, aircraft_name={}, battery_sn={}, total_time={:.1}s",
+        log::debug!(
+            "DJI Parser: version={}, product={:?}, aircraft_sn={}, aircraft_name={}",
             parser.version,
             parser.details.product_type,
             parser.details.aircraft_sn,
             parser.details.aircraft_name,
-            parser.details.battery_sn,
-            parser.details.total_time
         );
 
         // Check if we need an encryption key for V13+ logs
@@ -589,21 +586,12 @@ impl<'a> LogParser<'a> {
     async fn get_frames(&self, parser: &DJILog) -> Result<Vec<Frame>, ParserError> {
         // Version 13+ requires keychains for decryption
         let keychains = if parser.version >= 13 {
-            log::info!("Log version {} >= 13, fetching keychains for decryption", parser.version);
-            let api_key = self.api.get_api_key().ok_or_else(|| {
-                log::error!("No DJI API key configured — cannot decrypt V13+ log");
-                ParserError::EncryptionKeyRequired
+            let api_key = self.api.get_api_key().ok_or(ParserError::EncryptionKeyRequired)?;
+            let kc = parser.fetch_keychains(&api_key).map_err(|e| {
+                ParserError::Api(e.to_string())
             })?;
-            let kc = parser
-                .fetch_keychains(&api_key)
-                .map_err(|e| {
-                    log::error!("Keychain fetch failed: {}", e);
-                    ParserError::Api(e.to_string())
-                })?;
-            log::info!("Keychains fetched successfully ({} chains)", kc.len());
             Some(kc)
         } else {
-            log::debug!("Log version {} < 13, no decryption needed", parser.version);
             None
         };
 
@@ -627,28 +615,18 @@ impl<'a> LogParser<'a> {
         .await;
 
         match result {
-            Err(_) => {
-                log::error!("frames() timed out after {}s", PARSE_TIMEOUT_SECS);
-                Err(ParserError::Timeout(PARSE_TIMEOUT_SECS))
-            }
-            Ok(Err(join_err)) => {
-                log::error!("frames() task join error: {}", join_err);
-                Err(ParserError::Panic(format!("Task join error: {}", join_err)))
-            }
+            Err(_) => Err(ParserError::Timeout(PARSE_TIMEOUT_SECS)),
+            Ok(Err(join_err)) => Err(ParserError::Panic(format!("Task join error: {}", join_err))),
             Ok(Ok(Err(panic_val))) => {
                 let msg = panic_val
                     .downcast_ref::<String>()
                     .map(|s| s.clone())
                     .or_else(|| panic_val.downcast_ref::<&str>().map(|s| s.to_string()))
                     .unwrap_or_else(|| "unknown panic".to_string());
-                log::error!("frames() panicked: {}", msg);
                 Err(ParserError::Panic(msg))
             }
             Ok(Ok(Ok(frames_result))) => {
-                frames_result.map_err(|e| {
-                    log::error!("frames() returned error: {}", e);
-                    ParserError::Parse(e.to_string())
-                })
+                frames_result.map_err(|e| ParserError::Parse(e.to_string()))
             }
         }
     }
