@@ -66,12 +66,21 @@ export interface TelemetryData {
   flightMode?: (string | null)[];
 }
 
+/** App tip/warning message from DJI flight log */
+export interface FlightMessage {
+  timestampMs: number;
+  messageType: 'tip' | 'warn';
+  message: string;
+}
+
 /** Complete flight data response from backend */
 export interface FlightDataResponse {
   flight: Flight;
   telemetry: TelemetryData;
   /** GPS track: [lng, lat, height][] */
   track: [number, number, number][];
+  /** App tip/warning messages */
+  messages?: FlightMessage[];
 }
 
 export interface BatteryUsage {

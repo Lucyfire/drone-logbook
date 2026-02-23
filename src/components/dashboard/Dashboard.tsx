@@ -501,6 +501,7 @@ export function Dashboard() {
                     durationSecs={currentFlightData!.flight.durationSecs}
                     telemetry={currentFlightData!.telemetry}
                     themeMode={themeMode}
+                    messages={currentFlightData!.messages}
                   />
                 </div>
               </div>

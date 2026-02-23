@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use duckdb::{params, Connection, OptionalExt, Result as DuckResult};
 use thiserror::Error;
 
-use crate::models::{BatteryHealthPoint, BatteryUsage, DroneUsage, Flight, FlightDateCount, FlightMetadata, FlightTag, OverviewStats, TelemetryPoint, TelemetryRecord, TopDistanceFlight, TopFlight};
+use crate::models::{BatteryHealthPoint, BatteryUsage, DroneUsage, Flight, FlightDateCount, FlightMessage, FlightMetadata, FlightTag, OverviewStats, TelemetryPoint, TelemetryRecord, TopDistanceFlight, TopFlight};
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
@@ -273,6 +273,20 @@ impl Database {
                 value           VARCHAR NOT NULL,
                 updated_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
+
+            -- ============================================================
+            -- FLIGHT_MESSAGES TABLE: App messages (tips/warnings) per flight
+            -- ============================================================
+            CREATE TABLE IF NOT EXISTS flight_messages (
+                flight_id       BIGINT NOT NULL,
+                timestamp_ms    BIGINT NOT NULL,
+                message_type    VARCHAR NOT NULL,        -- 'tip' or 'warn'
+                message         VARCHAR NOT NULL,
+                PRIMARY KEY (flight_id, timestamp_ms, message_type)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_flight_messages_flight 
+                ON flight_messages(flight_id);
             "#,
         )?;
 
@@ -960,6 +974,11 @@ impl Database {
             "DELETE FROM flight_tags WHERE flight_id = ?",
             params![flight_id],
         );
+        // Clean up messages (ignore errors if table doesn't exist in old DBs)
+        let _ = conn.execute(
+            "DELETE FROM flight_messages WHERE flight_id = ?",
+            params![flight_id],
+        );
         conn.execute("DELETE FROM flights WHERE id = ?", params![flight_id])?;
 
         log::info!("Deleted flight {} in {:.1}ms", flight_id, start.elapsed().as_secs_f64() * 1000.0);
@@ -973,6 +992,7 @@ impl Database {
 
         conn.execute("DELETE FROM telemetry", params![])?;
         let _ = conn.execute("DELETE FROM flight_tags", params![]);
+        let _ = conn.execute("DELETE FROM flight_messages", params![]);
         conn.execute("DELETE FROM flights", params![])?;
 
         log::info!("Deleted all flights and telemetry in {:.1}ms", start.elapsed().as_secs_f64() * 1000.0);
@@ -1357,6 +1377,56 @@ impl Database {
         Ok(ids)
     }
 
+    // ================================================================
+    // MESSAGE MANAGEMENT
+    // ================================================================
+
+    /// Insert flight messages (tips and warnings) for a flight
+    pub fn insert_flight_messages(&self, flight_id: i64, messages: &[FlightMessage]) -> Result<(), DatabaseError> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock().unwrap();
+        for msg in messages {
+            // Use INSERT OR IGNORE to avoid duplicate key errors
+            conn.execute(
+                "INSERT OR IGNORE INTO flight_messages (flight_id, timestamp_ms, message_type, message) VALUES (?, ?, ?, ?)",
+                params![flight_id, msg.timestamp_ms, msg.message_type, msg.message],
+            )?;
+        }
+        log::debug!("Inserted {} messages for flight {}", messages.len(), flight_id);
+        Ok(())
+    }
+
+    /// Get all messages for a flight
+    pub fn get_flight_messages(&self, flight_id: i64) -> Result<Vec<FlightMessage>, DatabaseError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT timestamp_ms, message_type, message FROM flight_messages WHERE flight_id = ? ORDER BY timestamp_ms",
+        )?;
+        let messages = stmt
+            .query_map(params![flight_id], |row| {
+                Ok(FlightMessage {
+                    timestamp_ms: row.get(0)?,
+                    message_type: row.get(1)?,
+                    message: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(messages)
+    }
+
+    /// Delete all messages for a flight
+    #[allow(dead_code)]
+    pub fn delete_flight_messages(&self, flight_id: i64) -> Result<(), DatabaseError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM flight_messages WHERE flight_id = ?",
+            params![flight_id],
+        )?;
+        Ok(())
+    }
+
     /// Check if a file has already been imported (by hash)
     /// Returns the display_name of the matching flight if found, None otherwise
     pub fn is_file_imported(&self, file_hash: &str) -> Result<Option<String>, DatabaseError> {
@@ -1628,6 +1698,7 @@ impl Database {
         let telemetry_path = temp_dir.join("telemetry.parquet");
         let keychains_path = temp_dir.join("keychains.parquet");
         let tags_path = temp_dir.join("flight_tags.parquet");
+        let messages_path = temp_dir.join("flight_messages.parquet");
 
         conn.execute_batch(&format!(
             "COPY flights    TO '{}' (FORMAT PARQUET, COMPRESSION ZSTD);",
@@ -1646,6 +1717,11 @@ impl Database {
             "COPY flight_tags TO '{}' (FORMAT PARQUET, COMPRESSION ZSTD);",
             tags_path.to_string_lossy()
         ));
+        // Export messages table (ignore error if empty or doesn't exist)
+        let _ = conn.execute_batch(&format!(
+            "COPY flight_messages TO '{}' (FORMAT PARQUET, COMPRESSION ZSTD);",
+            messages_path.to_string_lossy()
+        ));
 
         drop(conn); // release the lock while we tar
 
@@ -1654,7 +1730,7 @@ impl Database {
         let gz = flate2::write::GzEncoder::new(dest_file, flate2::Compression::fast());
         let mut tar = tar::Builder::new(gz);
 
-        for name in &["flights.parquet", "telemetry.parquet", "keychains.parquet", "flight_tags.parquet"] {
+        for name in &["flights.parquet", "telemetry.parquet", "keychains.parquet", "flight_tags.parquet", "flight_messages.parquet"] {
             let file_path = temp_dir.join(name);
             if file_path.exists() {
                 tar.append_path_with_name(&file_path, name)
@@ -1775,6 +1851,23 @@ impl Database {
                 "#,
                 tags_path.to_string_lossy(),
                 tags_path.to_string_lossy()
+            ));
+        }
+
+        // --- Restore flight messages (backward compatible — may not exist in old backups) ---
+        let messages_path = temp_dir.join("flight_messages.parquet");
+        if messages_path.exists() {
+            let _ = conn.execute_batch(&format!(
+                r#"
+                DELETE FROM flight_messages
+                WHERE flight_id IN (
+                    SELECT DISTINCT flight_id FROM read_parquet('{}')
+                );
+                INSERT INTO flight_messages
+                SELECT * FROM read_parquet('{}');
+                "#,
+                messages_path.to_string_lossy(),
+                messages_path.to_string_lossy()
             ));
         }
 

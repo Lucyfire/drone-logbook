@@ -190,6 +190,20 @@ async fn import_log(
         }
     }
 
+    // Insert notes from re-imported CSV exports
+    if let Some(ref notes) = parse_result.notes {
+        if let Err(e) = state.db.update_flight_notes(flight_id, Some(notes.as_str())) {
+            log::warn!("Failed to insert notes for flight {}: {}", flight_id, e);
+        }
+    }
+
+    // Insert app messages (tips and warnings) from DJI logs
+    if !parse_result.messages.is_empty() {
+        if let Err(e) = state.db.insert_flight_messages(flight_id, &parse_result.messages) {
+            log::warn!("Failed to insert messages for flight {}: {}", flight_id, e);
+        }
+    }
+
     log::info!(
         "Successfully imported flight {} with {} points in {:.1}s",
         flight_id,
@@ -371,10 +385,20 @@ async fn get_flight_data(
     let telemetry = TelemetryData::from_records(&telemetry_records);
     let track = telemetry.extract_track(2000);
 
+    // Get flight messages (tips and warnings)
+    let messages = state
+        .db
+        .get_flight_messages(params.flight_id)
+        .unwrap_or_else(|e| {
+            log::warn!("Failed to get messages for flight {}: {}", params.flight_id, e);
+            Vec::new()
+        });
+
     Ok(Json(FlightDataResponse {
         flight,
         telemetry,
         track,
+        messages,
     }))
 }
 

@@ -13,7 +13,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { getTrackCenter, calculateBounds, formatAltitude, formatSpeed, formatDistance } from '@/lib/utils';
 import { useFlightStore } from '@/stores/flightStore';
 import { Select } from '@/components/ui/Select';
-import type { TelemetryData } from '@/types';
+import type { TelemetryData, FlightMessage } from '@/types';
 
 interface FlightMapProps {
   track: [number, number, number][]; // [lng, lat, alt][]
@@ -22,6 +22,7 @@ interface FlightMapProps {
   durationSecs?: number | null;
   telemetry?: TelemetryData;
   themeMode: 'system' | 'dark' | 'light';
+  messages?: FlightMessage[];
 }
 
 type ColorByMode = 'progress' | 'height' | 'speed' | 'distance' | 'videoSegment';
@@ -304,7 +305,7 @@ function StickArrows({ up, down, left, right }: StickArrowsProps) {
   );
 }
 
-export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, themeMode }: FlightMapProps) {
+export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, themeMode, messages }: FlightMapProps) {
   const [viewState, setViewState] = useState({
     longitude: 0,
     latitude: 0,
@@ -321,6 +322,7 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
   const [showTooltip, setShowTooltip] = useState(() => getSessionBool('map:showTooltip', true));
   const [showAircraft, setShowAircraft] = useState(() => getSessionBool('map:showAircraft', true));
   const [showMedia, setShowMedia] = useState(() => getSessionBool('map:showMedia', false));
+  const [showMessages, setShowMessages] = useState(() => getSessionBool('map:showMessages', true));
   const [hoverInfo, setHoverInfo] = useState<{
     x: number; y: number;
     height: number; speed: number; distance: number; progress: number;
@@ -631,6 +633,31 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
       distHome, timeSecs, lat, lng,
     };
   }, [telemetry, track, replayProgress, homeLat, homeLon, durationSecs]);
+
+  // Compute active message at current replay position
+  const activeMessage = useMemo(() => {
+    if (!showMessages || !messages || messages.length === 0) return null;
+    if (!replayActive) return null;
+    
+    const currentTimeMs = durationSecs != null && durationSecs > 0
+      ? replayProgress * durationSecs * 1000
+      : 0;
+    
+    // Find message closest to current time within a 2-second window
+    const tolerance = 2000; // 2 seconds
+    let closest: FlightMessage | null = null;
+    let closestDist = tolerance;
+    
+    for (const msg of messages) {
+      const dist = Math.abs(msg.timestampMs - currentTimeMs);
+      if (dist < closestDist) {
+        closest = msg;
+        closestDist = dist;
+      }
+    }
+    
+    return closest;
+  }, [showMessages, messages, replayActive, replayProgress, durationSecs]);
 
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
@@ -1237,6 +1264,12 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
   }, [showMedia]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('map:showMessages', String(showMessages));
+    }
+  }, [showMessages]);
+
+  useEffect(() => {
     if (is3D) {
       enableTerrain();
     }
@@ -1321,6 +1354,11 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
             label="Media"
             checked={showMedia}
             onChange={setShowMedia}
+          />
+          <ToggleRow
+            label="Messages"
+            checked={showMessages}
+            onChange={setShowMessages}
           />
 
           {/* Color-by dropdown */}
@@ -1533,6 +1571,32 @@ export function FlightMap({ track, homeLat, homeLon, durationSecs, telemetry, th
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Message popup — centered at top during playback */}
+      {activeMessage && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-[400px]">
+          <div className={`flex items-start gap-2.5 rounded-lg px-3.5 py-2.5 shadow-lg backdrop-blur ${
+            activeMessage.messageType === 'warn'
+              ? 'bg-amber-900/90 border border-amber-600/60'
+              : 'bg-blue-900/90 border border-blue-600/60'
+          }`}>
+            {activeMessage.messageType === 'warn' ? (
+              <svg className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            <span className={`text-sm font-medium ${
+              activeMessage.messageType === 'warn' ? 'text-amber-100' : 'text-blue-100'
+            }`}>
+              {activeMessage.message}
+            </span>
           </div>
         </div>
       )}

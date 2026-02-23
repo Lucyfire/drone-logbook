@@ -148,6 +148,15 @@ pub struct TelemetryRecord {
     pub is_video: Option<bool>,
 }
 
+/// Flight message (tip or warning from DJI app)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlightMessage {
+    pub timestamp_ms: i64,
+    pub message_type: String, // "tip" or "warn"
+    pub message: String,
+}
+
 /// Response format optimized for ECharts rendering
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -155,6 +164,7 @@ pub struct FlightDataResponse {
     pub flight: Flight,
     pub telemetry: TelemetryData,
     pub track: Vec<[f64; 3]>, // [lng, lat, height] for map
+    pub messages: Vec<FlightMessage>,
 }
 
 /// Overview statistics across all flights

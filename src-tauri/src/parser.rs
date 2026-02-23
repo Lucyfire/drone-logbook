@@ -25,7 +25,7 @@ use crate::api::DjiApi;
 use crate::database::Database;
 use crate::dronelogbook_parser::DroneLogbookParser;
 use crate::litchi_parser::LitchiParser;
-use crate::models::{FlightMetadata, FlightStats, TelemetryPoint};
+use crate::models::{FlightMessage, FlightMetadata, FlightStats, TelemetryPoint};
 
 /// Maximum time allowed for parsing a single log file (seconds)
 const PARSE_TIMEOUT_SECS: u64 = 40;
@@ -69,6 +69,8 @@ pub struct ParseResult {
     pub manual_tags: Vec<String>,
     /// Notes to preserve from re-imported CSV exports
     pub notes: Option<String>,
+    /// App messages (tips and warnings) from the flight log
+    pub messages: Vec<FlightMessage>,
 }
 
 /// DJI Log Parser wrapper
@@ -212,6 +214,10 @@ impl<'a> LogParser<'a> {
             frames.len() - points.len()
         );
 
+        // Extract app messages (tips and warnings)
+        let messages = self.extract_messages(&frames, details_total_time_secs);
+        log::info!("Extracted {} app messages from log", messages.len());
+
         if points.is_empty() {
             log::warn!("No valid telemetry points after filtering — all frames had corrupt/missing data");
             return Err(ParserError::NoTelemetryData);
@@ -275,7 +281,7 @@ impl<'a> LogParser<'a> {
         let tags = Self::generate_smart_tags(&metadata, &stats);
         log::info!("Generated smart tags: {:?}", tags);
 
-        Ok(ParseResult { metadata, points, tags, manual_tags: Vec::new(), notes: None })
+        Ok(ParseResult { metadata, points, tags, manual_tags: Vec::new(), notes: None, messages })
     }
 
     /// Generate smart tags based on flight metadata and statistics
@@ -892,6 +898,55 @@ impl<'a> LogParser<'a> {
         }
 
         total
+    }
+
+    /// Extract app messages (tips and warnings) from parsed frames
+    fn extract_messages(&self, frames: &[Frame], details_total_time_secs: f64) -> Vec<FlightMessage> {
+        let mut messages = Vec::new();
+        let mut timestamp_ms: i64 = 0;
+
+        // Check if any frame has a non-zero fly_time
+        let has_fly_time = frames.iter().any(|f| f.osd.fly_time > 0.0);
+
+        // When fly_time is unavailable, compute interval from header duration
+        let fallback_interval_ms: i64 = if !has_fly_time && details_total_time_secs > 0.0 && !frames.is_empty() {
+            ((details_total_time_secs * 1000.0) / frames.len() as f64).round() as i64
+        } else {
+            100 // default 10Hz assumption
+        };
+
+        for frame in frames {
+            let current_timestamp_ms = if frame.osd.fly_time > 0.0 {
+                (frame.osd.fly_time * 1000.0) as i64
+            } else {
+                timestamp_ms
+            };
+
+            // Extract tip message if present
+            if !frame.app.tip.is_empty() {
+                messages.push(FlightMessage {
+                    timestamp_ms: current_timestamp_ms,
+                    message_type: "tip".to_string(),
+                    message: frame.app.tip.clone(),
+                });
+            }
+
+            // Extract warning message if present
+            if !frame.app.warn.is_empty() {
+                messages.push(FlightMessage {
+                    timestamp_ms: current_timestamp_ms,
+                    message_type: "warn".to_string(),
+                    message: frame.app.warn.clone(),
+                });
+            }
+
+            timestamp_ms = current_timestamp_ms + fallback_interval_ms;
+        }
+
+        // Deduplicate consecutive identical messages (some messages repeat across frames)
+        messages.dedup_by(|a, b| a.message_type == b.message_type && a.message == b.message);
+
+        messages
     }
 
     /// Extract drone model from parser metadata

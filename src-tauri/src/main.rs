@@ -286,6 +286,13 @@ mod tauri_app {
             }
         }
 
+        // Insert app messages (tips and warnings) from DJI logs
+        if !parse_result.messages.is_empty() {
+            if let Err(e) = state.db.insert_flight_messages(flight_id, &parse_result.messages) {
+                log::warn!("Failed to insert messages for flight {}: {}", flight_id, e);
+            }
+        }
+
         log::info!(
             "Successfully imported flight {} with {} points in {:.1}s",
             flight_id,
@@ -468,18 +475,29 @@ mod tauri_app {
         let telemetry = TelemetryData::from_records(&telemetry_records);
         let track = telemetry.extract_track(2000);
 
+        // Get flight messages (tips and warnings)
+        let messages = state
+            .db
+            .get_flight_messages(flight_id)
+            .unwrap_or_else(|e| {
+                log::warn!("Failed to get messages for flight {}: {}", flight_id, e);
+                Vec::new()
+            });
+
         log::debug!(
-            "get_flight_data for flight {} complete in {:.1}ms: {} telemetry series, {} track points",
+            "get_flight_data for flight {} complete in {:.1}ms: {} telemetry series, {} track points, {} messages",
             flight_id,
             start.elapsed().as_secs_f64() * 1000.0,
             telemetry_records.len(),
-            track.len()
+            track.len(),
+            messages.len()
         );
 
         Ok(FlightDataResponse {
             flight,
             telemetry,
             track,
+            messages,
         })
     }
 

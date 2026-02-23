@@ -12,7 +12,7 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDateTime, Utc, TimeZone};
 
 use crate::database::Database;
-use crate::models::{FlightMetadata, FlightStats, TelemetryPoint};
+use crate::models::{FlightMetadata, FlightMessage, FlightStats, TelemetryPoint};
 use crate::parser::{ParseResult, ParserError, LogParser};
 
 /// Parse a timestamp string flexibly, handling multiple formats:
@@ -247,14 +247,16 @@ impl<'a> DroneLogbookParser<'a> {
         let headers: Vec<String> = header_line.split(',').map(|s| s.trim().to_string()).collect();
         let col_map = ColumnMap::new(&headers);
 
-        // Find metadata column index
+        // Find metadata and messages column indices
         let metadata_col_idx = headers.iter().position(|h| h.to_lowercase() == "metadata");
+        let messages_col_idx = headers.iter().position(|h| h.to_lowercase() == "messages");
 
-        // Parse first data row to extract metadata JSON from metadata column
+        // Parse first data row to extract metadata JSON and messages from their columns
         let mut metadata_map: HashMap<String, String> = HashMap::new();
         let mut first_row_line: Option<String> = None;
         let mut imported_auto_tags: Vec<String> = Vec::new();
         let mut imported_manual_tags: Vec<String> = Vec::new();
+        let mut imported_messages: Vec<FlightMessage> = Vec::new();
 
         for line_result in lines.by_ref() {
             let line = match line_result {
@@ -323,6 +325,47 @@ impl<'a> DroneLogbookParser<'a> {
                     }
                 } else {
                     log::warn!("Metadata column index {} out of bounds (fields: {})", meta_idx, fields.len());
+                }
+
+                // Parse messages from the messages column (same row)
+                if let Some(msg_idx) = messages_col_idx {
+                    if let Some(msg_json) = fields.get(msg_idx) {
+                        if !msg_json.is_empty() {
+                            // Parse JSON array of messages: [{timestamp_ms, type, message}, ...]
+                            match serde_json::from_str::<serde_json::Value>(msg_json) {
+                                Ok(json_val) => {
+                                    if let Some(arr) = json_val.as_array() {
+                                        for msg_obj in arr {
+                                            if let Some(obj) = msg_obj.as_object() {
+                                                let timestamp_ms = obj.get("timestamp_ms")
+                                                    .and_then(|v| v.as_i64())
+                                                    .unwrap_or(0);
+                                                let message_type = obj.get("type")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("tip")
+                                                    .to_string();
+                                                let message = obj.get("message")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                if !message.is_empty() {
+                                                    imported_messages.push(FlightMessage {
+                                                        timestamp_ms,
+                                                        message_type,
+                                                        message,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                        log::info!("Parsed {} messages from CSV", imported_messages.len());
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to parse messages JSON: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
                 log::info!("No metadata column found in CSV headers");
@@ -601,9 +644,10 @@ impl<'a> DroneLogbookParser<'a> {
             }
         }
         
-        log::info!("Final auto tags: {:?}, manual tags: {:?}, notes: {:?}", tags, imported_manual_tags, meta_notes.is_some());
+        log::info!("Final auto tags: {:?}, manual tags: {:?}, notes: {:?}, messages: {}", 
+            tags, imported_manual_tags, meta_notes.is_some(), imported_messages.len());
 
-        Ok(ParseResult { metadata, points, tags, manual_tags: imported_manual_tags, notes: meta_notes })
+        Ok(ParseResult { metadata, points, tags, manual_tags: imported_manual_tags, notes: meta_notes, messages: imported_messages })
     }
 }
 

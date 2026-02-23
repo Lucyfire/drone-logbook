@@ -131,6 +131,15 @@ export function FlightStats({ data }: FlightStatsProps) {
     );
     const metadataJson = JSON.stringify(cleanMetadata);
 
+    // Build messages JSON for the first row's messages column
+    const messagesJson = data.messages && data.messages.length > 0
+      ? JSON.stringify(data.messages.map(m => ({
+          timestamp_ms: m.timestampMs,
+          type: m.messageType,
+          message: m.message,
+        })))
+      : '';
+
     const headers = [
       'time_s',
       'lat',
@@ -161,6 +170,7 @@ export function FlightStats({ data }: FlightStatsProps) {
       'is_photo',
       'is_video',
       'flight_mode',
+      'messages',
       'metadata',
     ];
 
@@ -190,6 +200,7 @@ export function FlightStats({ data }: FlightStatsProps) {
         '', '', '', // pitch, roll, yaw
         '', '', '', '', // rc controls
         '', '', '', // is_photo, is_video, flight_mode
+        escapeCsv(messagesJson),
         escapeCsv(metadataJson),
       ].join(',');
       return [headers.join(','), singleRow].join('\n');
@@ -253,7 +264,8 @@ export function FlightStats({ data }: FlightStatsProps) {
         getBoolValue(telemetry.isPhoto, index),
         getBoolValue(telemetry.isVideo, index),
         getStrValue(telemetry.flightMode, index),
-        // Metadata JSON only on first row (time 0)
+        // Messages and Metadata JSON only on first row (time 0)
+        index === 0 ? messagesJson : '',
         index === 0 ? metadataJson : '',
       ].map(escapeCsv);
       return values.join(',');
