@@ -90,24 +90,20 @@
 
 ## Features
 
-- **High-Performance Analytics**: DuckDB-powered analytical queries with automatic downsampling for large datasets - import all your flight logs in one place. Free and open source, zero maintanance cost, no monthly subscription for unlimited number of flight log analysis.
-- **Multi-Format Support**: Import DJI flight logs (.txt) and Litchi CSV exports with automatic unit detection (metric/imperial). Litchi flights are auto-tagged for easy identification. Third-party flight controller apps (Dronelink, DroneDeploy) are also supported with automatic fallback keychain fetching.
-- **Smart Deduplication**: Automatically detects and prevents duplicate flight imports based on drone serial, battery serial, and exact start time match, even when importing the same flight from different export versions.
-- **Universally available**: The application can be built locally from source, but for ease of use, standalone binaries are provided for Windows and MacOS - ready to deploy. A Docker image is also available for self-hosted web deployment.
-- **Interactive Flight Maps**: MapLibre GL with 3D terrain, satellite toggle, start/end markers, and a deck.gl 3D path overlay - visualize your flight map in 3D interatively. Flight replay with play/pause, seek slider, speed control (0.5x-16x), and a 3D-aware aircraft marker that follows the flight path at altitude. Live telemetry overlay during replay showing height, speed, battery, distance, attitude, and more - synced to the playback position. RC stick input overlay visualizes throttle, rudder, elevator, and aileron inputs with progressive-fill bars during playback. Hover tooltip shows battery status indicators alongside other telemetry.
-- **Telemetry Charts**: Height/VPS, speed, battery, attitude, RC signal, GPS satellites, RC uplink/downlink, distance-to-home, and velocity X/Y/Z with synchronized drag-to-zoom across all charts.
-- **Local-First**: All data stored locally in a single DuckDB database - No sketchy server upload. No need to even upload in DJI's servers, you can copy the log files locally and process them locally (for log decryption, the key will be sent to DJI's server during import, so you need to be online during the first import of a new log file)
-- **Smart Tags**: Automatic flight tagging on import — Night Flight, High Speed, Cold Battery, Low Battery, High Altitude, Long Distance, M-SDK (for third-party app logs), and more. Offline reverse geocoding adds city, country, and continent tags from takeoff coordinates (no internet needed). Add your own manual tags too. Bulk operations: "Untag filtered" removes tags from all filtered flights, "Bulk tag filtered" adds a manual tag to all filtered flights. Toggle auto-tagging on/off and regenerate tags for all flights from Settings.
-- **Filters, Search & Sort**: Date range picker, drone/device filter, battery serial filter, duration/altitude/distance range sliders, tag filter, map area filter, search, and sorting - shared across flight list and overview. Filter inversion to negate selections. Searchable dropdowns with type-to-filter and arrow key navigation.
-- **Keyboard Shortcuts**: Up/Down arrows to browse flight list, Enter to select, Escape to close modals. Arrow keys work in all dropdowns.
-- **Overview Dashboard**: Aggregate totals, averages, heatmap activity with date range selector, pie-chart breakdowns (by drone, battery, flight duration), flight locations cluster map with geographic filter, and top-flight highlights - all filtered by sidebar selections
-- **Battery Health Insights**: Per-battery health bars with inline serial renaming, and per‑minute charge usage history timeline with zoom/scroll. Flight tips and warnings from DJI logs displayed in flight stats.
-- **Maintenance Tracking**: Set flight and airtime thresholds for batteries and aircraft. Progress bars show usage since last maintenance with color-coded warnings (green → yellow → orange → red). Record maintenance with date picker to reset counters. Multi-select dropdowns for tracking multiple items.
-- **Theme & Units**: Light/Dark/System theme and Metric/Imperial units
-- **Exports**: Direct CSV, JSON, GPX, and KML export from the flight stats bar. Manual entries export with location point and metadata.
-- **FlyCard Generator**: Create shareable 1080x1080 social media images with flight stats overlay, map background with flight path, and branding, perfect for sharing on Instagram or Strava-style posts
-- **Manual Flight Entry**: Record flights without log files by entering an optional flight title (display name), aircraft details, date/time, duration, coordinates, and optional distance/altitude. Auto-tagged as "Manual Entry" with smart location tags.
-- **Backup & Restore**: Export your entire database to a portable backup file and restore it on any instance - works on both desktop and Docker
+- **High-Performance Analytics**: DuckDB-powered queries with automatic downsampling for large datasets. Free, open source, no subscription required.
+- **Multi-Format Support**: Import DJI logs (.txt) and Litchi CSV exports with automatic unit detection. Third-party apps (Dronelink, DroneDeploy) supported.
+- **Smart Deduplication**: Prevents duplicate imports based on drone serial, battery serial, and start time.
+- **Interactive Flight Maps**: 3D terrain, satellite toggle, flight replay with speed control (0.5x-16x), live telemetry overlay, and RC stick input visualization.
+- **Telemetry Charts**: Height, speed, battery, attitude, RC signal, GPS, distance-to-home, and velocity with synchronized drag-to-zoom.
+- **Local-First Storage**: All data in a local DuckDB database. No cloud upload required (except DJI key fetch during first import).
+- **Smart Tags**: Auto-tagging (Night Flight, High Speed, Low Battery, etc.) and offline reverse geocoding for location tags. Manual tags and bulk operations supported.
+- **Filters & Search**: Date range, drone/battery filters, duration/altitude/distance sliders, tag filter, map area filter, and filter inversion.
+- **Overview Dashboard**: Aggregate stats, activity heatmap, pie charts by drone/battery/duration, cluster map, and top-flight highlights.
+- **Battery Health**: Per-battery health bars, serial renaming, and per-minute usage history with zoom.
+- **Maintenance Tracking**: Configurable thresholds with color-coded progress bars and date-based maintenance recording.
+- **Exports**: CSV, JSON, GPX, and KML export. FlyCard generator for shareable 1080x1080 social media images.
+- **Manual Flight Entry**: Record flights without log files with optional coordinates and metadata.
+- **Backup & Restore**: Export/import full database across desktop and Docker instances.
 
 ## Accessing flight log files
 
@@ -257,7 +253,9 @@ docker compose -f docker-compose-build.yml up -d
 
 ### Data persistence
 
-All flight data (DuckDB database, cached decryption keys) is stored in a Docker named volume (`drone-data`) mapped to `/data/drone-logbook` internally inside the container. Data persists across container restarts, image updates, and rebuilds. It is only removed if you explicitly delete the volume with `docker compose down -v`.
+All flight data (DuckDB database, cached decryption keys, and optionally uploaded log files) is stored in a Docker named volume (`drone-data`) mapped to `/data/drone-logbook` internally inside the container. Data persists across container restarts, image updates, and rebuilds. It is only removed if you explicitly delete the volume with `docker compose down -v`.
+
+When `KEEP_UPLOADED_FILES=true` is set, original log files are preserved in an `uploaded` subfolder using their SHA256 hash as filename for deduplication.
 
 ### Environment variables
 
@@ -267,6 +265,7 @@ All flight data (DuckDB database, cached decryption keys) is stored in a Docker 
 | `RUST_LOG`      | `info`                 | Log level (debug, info, warn)                                               |
 | `SYNC_LOGS_PATH`| (not set)              | Path to mounted folder for automatic log import (e.g., `/sync-logs`)        |
 | `SYNC_INTERVAL` | (not set)              | Cron expression for scheduled sync (e.g., `0 0 */8 * * *` for every 8 hours)|
+| `KEEP_UPLOADED_FILES` | (not set)       | When `true`, keeps copies of uploaded log files in the `uploaded` folder    |
 
 ### Automatic log sync (Docker)
 
@@ -300,6 +299,12 @@ You can mount a folder containing your drone flight logs and have the app automa
 | `0 0 0 * * 0` | Weekly on Sunday at midnight |
 
 The sync status and a manual "Sync" button will appear in the Import section when configured. During sync, the app shows file-by-file progress (current filename, X of Y counter) matching the desktop app experience.
+
+### Keep uploaded files (Docker)
+
+To retain copies of uploaded log files in Docker, enable the `KEEP_UPLOADED_FILES` environment variable:
+
+Uploaded files are stored in `/data/drone-logbook/uploaded` inside the container (part of the `drone-data` volume). You can adjust the external mount volume to have direct access. 
 
 
 ## Configuration

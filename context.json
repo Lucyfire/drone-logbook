@@ -97,6 +97,7 @@
       "Flight list sidebar: collapsible Filters section (default collapsed) and Import section (auto-collapsed when flights exist, auto-expanded when empty).",
       "Overview uses sidebar-filtered flights via Zustand store (sidebarFilteredFlightIds) instead of its own filter bar.",
       "Settings: API key, units (metric/imperial), theme (light/dark/system), delete-all logs.",
+      "Settings: Keep uploaded files toggle (desktop only) with folder picker to retain copies of imported log files with hash-based deduplication.",
       "Settings: shows app data + log directory for troubleshooting.",
       "Charts: height/VPS/speed (metric in km/h), battery, attitude, RC signal, GPS satellites.",
       "Charts: RC uplink/downlink, distance-to-home, and velocity XYZ panels.",
@@ -390,6 +391,14 @@
       "description": "Notes field preserved during CSV re-import.",
       "parser": "dronelogbook_parser.rs: Parses notes field from CSV metadata column. Notes included in ParseResult.",
       "database": "database.rs: Notes saved to flights table on import."
+    },
+    "keep_uploaded_files": {
+      "description": "Optional feature to retain copies of uploaded flight log files with hash-based deduplication.",
+      "backend_tauri": "main.rs: KeepUploadSettings struct, get_keep_upload_settings/set_keep_upload_settings commands, copy_uploaded_file helper. Files copied to 'uploaded' folder inside app data dir using file hash as filename. import_log copies file on both successful import and duplicate skip.",
+      "backend_web": "server.rs: copy_uploaded_file_web function. Reads KEEP_UPLOADED_FILES env var first, falls back to config.json setting. Files stored in uploaded/ subfolder of DATA_DIR.",
+      "frontend": "api.ts: KeepUploadSettings interface (enabled, folderPath), getKeepUploadSettings/setKeepUploadSettings functions (return null in web mode). SettingsModal.tsx: Toggle switch and folder picker (desktop only, hidden in web mode).",
+      "docker": "docker-compose.yml: KEEP_UPLOADED_FILES env var (commented by default). Volume mount for uploaded folder.",
+      "behavior": "Enabled by default on desktop. Files are copied using their SHA256 hash as filename to deduplicate identical files. Files are copied even when flight is skipped as duplicate, ensuring the original log is preserved."
     }
   },
   "behavior": {
@@ -514,7 +523,7 @@
       "Bulk inserts use DuckDB Appender matching the exact column order above.",
       "Downsampling occurs when telemetry points exceed ~5000 (1s buckets).",
       "Map track altitude uses COALESCE(height, vps_height, altitude) for relative 3D paths.",
-      "App data dir structure: flights.db + keychains/.",
+      "App data dir structure: flights.db + keychains/ + uploaded/ (when keep uploaded files enabled).",
       "Failed telemetry inserts trigger automatic flight metadata cleanup.",
       "flight_tags table stores per-flight tags with tag_type (auto/manual). Included in backup/restore. Migration adds tag_type column if missing.",
       "Smart tags config (enabled/disabled) stored in config.json alongside API key."
@@ -619,8 +628,8 @@
   ],
   "notes": {
     "api_key": "Stored locally in config.json; never sent except to DJI API.",
-    "db_location_desktop": "App data dir under ~/.local/share/com.drone-logbook.app (flights.db + keychains/)",
-    "db_location_docker": "/data/drone-logbook (persistent volume)",
+    "db_location_desktop": "App data dir under ~/.local/share/com.drone-logbook.app (flights.db + keychains/ + uploaded/)",
+    "db_location_docker": "/data/drone-logbook (persistent volume, includes db and uploaded/ when KEEP_UPLOADED_FILES=true)",
     "log_location": "Log files under ~/.local/share/com.drone-logbook.app/logs/ (desktop) or stdout (Docker)",
     "git": {
       "branch": "main"
