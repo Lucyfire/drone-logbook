@@ -503,6 +503,38 @@ export async function loadEnabledSmartTagTypes(): Promise<SmartTagTypeId[]> {
 }
 
 // ============================================================================
+// Keep Uploaded Files Settings (Tauri only)
+// ============================================================================
+
+export interface KeepUploadSettings {
+  enabled: boolean;
+  folder_path: string;
+}
+
+/** Get keep uploaded files settings (Tauri desktop only) */
+export async function getKeepUploadSettings(): Promise<KeepUploadSettings | null> {
+  if (isWeb) {
+    // Not available in web mode
+    return null;
+  }
+  const invoke = await getTauriInvoke();
+  return invoke('get_keep_upload_settings') as Promise<KeepUploadSettings>;
+}
+
+/** Set keep uploaded files settings (Tauri desktop only) */
+export async function setKeepUploadSettings(enabled: boolean, folderPath?: string | null): Promise<KeepUploadSettings | null> {
+  if (isWeb) {
+    // Not available in web mode
+    return null;
+  }
+  const invoke = await getTauriInvoke();
+  return invoke('set_keep_upload_settings', { 
+    enabled, 
+    folderPath: folderPath ?? null 
+  }) as Promise<KeepUploadSettings>;
+}
+
+// ============================================================================
 // File helpers for web mode (replacing Tauri dialog/fs plugins)
 // ============================================================================
 

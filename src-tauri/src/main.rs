@@ -177,12 +177,40 @@ mod tauri_app {
             });
         }
 
+        // Load config early for keep_uploaded_files setting
+        let config_path = state.db.data_dir.join("config.json");
+        let config: serde_json::Value = if config_path.exists() {
+            std::fs::read_to_string(&config_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
+        let keep_enabled = config.get("keep_uploaded_files").and_then(|v| v.as_bool()).unwrap_or(true);
+        let default_folder = state.db.data_dir.join("uploaded");
+        let upload_folder = config.get("uploaded_files_path")
+            .and_then(|v| v.as_str())
+            .map(|s| PathBuf::from(s))
+            .unwrap_or(default_folder);
+
+        // Helper to copy uploaded file if setting is enabled
+        let try_copy_file = |file_hash: Option<&str>| {
+            if keep_enabled {
+                if let Err(e) = copy_uploaded_file(&path, &upload_folder, file_hash) {
+                    log::warn!("Failed to copy uploaded file: {}", e);
+                }
+            }
+        };
+
         let parser = LogParser::new(&state.db);
 
         let parse_result = match parser.parse_log(&path).await {
             Ok(result) => result,
             Err(crate::parser::ParserError::AlreadyImported(matching_flight)) => {
                 log::info!("Skipping already-imported file: {} — matches flight '{}' in database", file_path, matching_flight);
+                // Still copy the file even though flight is already imported
+                try_copy_file(None);
                 return Ok(ImportResult {
                     success: false,
                     flight_id: None,
@@ -210,6 +238,8 @@ mod tauri_app {
             parse_result.metadata.start_time,
         ).unwrap_or(None) {
             log::info!("Skipping duplicate flight (signature match): {} - matches flight '{}' in database", file_path, matching_flight);
+            // Still copy the file even though flight is a duplicate
+            try_copy_file(parse_result.metadata.file_hash.as_deref());
             return Ok(ImportResult {
                 success: false,
                 flight_id: None,
@@ -299,6 +329,9 @@ mod tauri_app {
             point_count,
             import_start.elapsed().as_secs_f64()
         );
+
+        // Copy uploaded file if setting is enabled
+        try_copy_file(parse_result.metadata.file_hash.as_deref());
 
         Ok(ImportResult {
             success: true,
@@ -774,6 +807,112 @@ mod tauri_app {
         Ok(types)
     }
 
+    /// Settings for keeping uploaded files
+    #[derive(serde::Serialize, serde::Deserialize)]
+    pub struct KeepUploadSettings {
+        pub enabled: bool,
+        pub folder_path: String,
+    }
+
+    #[tauri::command]
+    pub async fn get_keep_upload_settings(state: State<'_, AppState>) -> Result<KeepUploadSettings, String> {
+        let config_path = state.db.data_dir.join("config.json");
+        let default_folder = state.db.data_dir.join("uploaded").to_string_lossy().to_string();
+        
+        if config_path.exists() {
+            let content = std::fs::read_to_string(&config_path)
+                .map_err(|e| format!("Failed to read config: {}", e))?;
+            let val: serde_json::Value = serde_json::from_str(&content)
+                .map_err(|e| format!("Failed to parse config: {}", e))?;
+            
+            let enabled = val.get("keep_uploaded_files").and_then(|v| v.as_bool()).unwrap_or(true);
+            let folder_path = val.get("uploaded_files_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or(default_folder);
+            
+            Ok(KeepUploadSettings { enabled, folder_path })
+        } else {
+            Ok(KeepUploadSettings { enabled: true, folder_path: default_folder })
+        }
+    }
+
+    #[tauri::command]
+    pub async fn set_keep_upload_settings(enabled: bool, folder_path: Option<String>, state: State<'_, AppState>) -> Result<KeepUploadSettings, String> {
+        let config_path = state.db.data_dir.join("config.json");
+        let default_folder = state.db.data_dir.join("uploaded").to_string_lossy().to_string();
+        let actual_folder = folder_path.unwrap_or(default_folder);
+        
+        let mut config: serde_json::Value = if config_path.exists() {
+            let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+            serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
+        
+        config["keep_uploaded_files"] = serde_json::json!(enabled);
+        config["uploaded_files_path"] = serde_json::json!(actual_folder.clone());
+        
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+            .map_err(|e| format!("Failed to write config: {}", e))?;
+        
+        Ok(KeepUploadSettings { enabled, folder_path: actual_folder })
+    }
+
+    /// Copy uploaded file to the keep folder with hash-based deduplication
+    fn copy_uploaded_file(src_path: &PathBuf, dest_folder: &PathBuf, file_hash: Option<&str>) -> Result<(), String> {
+        // Create the destination folder if it doesn't exist
+        std::fs::create_dir_all(dest_folder)
+            .map_err(|e| format!("Failed to create uploaded files folder: {}", e))?;
+        
+        let file_name = src_path.file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid file name")?;
+        
+        let dest_path = dest_folder.join(file_name);
+        
+        // If file with same name exists, check hash
+        if dest_path.exists() {
+            let existing_hash = LogParser::calculate_file_hash(&dest_path)
+                .map_err(|e| format!("Failed to hash existing file: {}", e))?;
+            
+            // If hashes match, skip (file already exists)
+            if let Some(hash) = file_hash {
+                if existing_hash == hash {
+                    log::info!("File already exists with same hash, skipping: {}", file_name);
+                    return Ok(());
+                }
+            }
+            
+            // Hashes don't match - save with hash suffix
+            let stem = src_path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file");
+            let extension = src_path.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            
+            let hash_suffix = file_hash.map(|h| &h[..8]).unwrap_or("unknown");
+            let new_name = if extension.is_empty() {
+                format!("{}_{}", stem, hash_suffix)
+            } else {
+                format!("{}_{}.{}", stem, hash_suffix, extension)
+            };
+            
+            let new_dest_path = dest_folder.join(&new_name);
+            std::fs::copy(src_path, &new_dest_path)
+                .map_err(|e| format!("Failed to copy file: {}", e))?;
+            log::info!("Copied uploaded file (renamed due to hash mismatch): {} -> {}", file_name, new_name);
+        } else {
+            // No existing file, just copy
+            std::fs::copy(src_path, &dest_path)
+                .map_err(|e| format!("Failed to copy file: {}", e))?;
+            log::info!("Copied uploaded file: {}", file_name);
+        }
+        
+        Ok(())
+    }
+
     #[tauri::command]
     pub async fn regenerate_flight_smart_tags(
         state: State<'_, AppState>,
@@ -974,6 +1113,8 @@ mod tauri_app {
                 set_smart_tags_enabled,
                 get_enabled_tag_types,
                 set_enabled_tag_types,
+                get_keep_upload_settings,
+                set_keep_upload_settings,
                 regenerate_flight_smart_tags,
                 regenerate_all_smart_tags,
             ])

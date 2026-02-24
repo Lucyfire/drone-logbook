@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { sha256 as jsSha256 } from 'js-sha256';
 import * as api from '@/lib/api';
+import { isWebMode, getKeepUploadSettings, setKeepUploadSettings, KeepUploadSettings } from '@/lib/api';
 import { useFlightStore } from '@/stores/flightStore';
 import { Select } from '@/components/ui/Select';
 import { getBlacklist, clearBlacklist } from './FlightImporter';
@@ -21,7 +22,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [apiKeyType, setApiKeyType] = useState<'none' | 'default' | 'personal'>('none');
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [appDataDir, setAppDataDir] = useState('');
   const [appLogDir, setAppLogDir] = useState('');
   const [appVersion, setAppVersion] = useState('');
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -36,6 +36,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [isTagTypeDropdownOpen, setIsTagTypeDropdownOpen] = useState(false);
   const [tagTypeSearch, setTagTypeSearch] = useState('');
   const tagTypeDropdownRef = useRef<HTMLDivElement>(null);
+  const [keepUploadSettings, setKeepUploadSettingsState] = useState<KeepUploadSettings | null>(null);
 
   const {
     unitSystem,
@@ -114,13 +115,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (isOpen) {
       checkApiKey();
-      getAppDataDir();
       getAppLogDir();
       loadSmartTagsEnabled();
       fetchAppVersion();
       setBlacklistCount(getBlacklist().size);
       // Load enabled tag types from backend
       api.loadEnabledSmartTagTypes().then(setEnabledTagTypes);
+      // Load keep upload settings (Tauri desktop only)
+      if (!isWebMode()) {
+        getKeepUploadSettings().then(setKeepUploadSettingsState);
+      }
     }
   }, [isOpen]);
 
@@ -180,15 +184,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     } catch {
       // Fallback to package.json version injected by Vite
       setAppVersion(__APP_VERSION__);
-    }
-  };
-
-  const getAppDataDir = async () => {
-    try {
-      const dir = await api.getAppDataDir();
-      setAppDataDir(dir);
-    } catch (err) {
-      console.error('Failed to get app data dir:', err);
     }
   };
 
@@ -809,22 +804,88 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 )}
               </p>
               <p className="text-xs text-gray-500 mt-2">
-                <strong className="text-gray-400">Data Location:</strong>
-                <br />
-                <code className="text-xs text-gray-400 bg-drone-dark px-1 py-0.5 rounded break-all">
-                  {appDataDir || 'Loading...'}
-                </code>
-              </p>
-              <p className="text-xs text-gray-500 mt-2">
                 <strong className="text-gray-400">Log Location:</strong>
                 <br />
                 <code className="text-xs text-gray-400 bg-drone-dark px-1 py-0.5 rounded break-all">
                   {appLogDir || 'Loading...'}
                 </code>
               </p>
-              <p className="text-xs text-gray-500 mt-2">
-                Your API key is stored locally in <code className="text-gray-400">config.json</code> and never sent to any external servers except DJI's official API.
-              </p>
+
+              {/* Keep Uploaded Files - Only show in Tauri desktop mode */}
+              {!isWebMode() && keepUploadSettings && (
+                <div className="mt-4 pt-4 border-t border-gray-700">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const newEnabled = !keepUploadSettings.enabled;
+                        const result = await setKeepUploadSettings(newEnabled, keepUploadSettings.folder_path);
+                        if (result) setKeepUploadSettingsState(result);
+                      }}
+                      className="flex items-center gap-3 text-[0.85rem] text-gray-300"
+                      aria-pressed={keepUploadSettings.enabled}
+                    >
+                      <span
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-all ${
+                          keepUploadSettings.enabled
+                            ? 'bg-drone-primary/90 border-drone-primary'
+                            : 'bg-drone-surface border-gray-600 toggle-track-off'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                            keepUploadSettings.enabled ? 'translate-x-4' : 'translate-x-1'
+                          }`}
+                        />
+                      </span>
+                      <span>Keep uploaded files</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const { open } = await import('@tauri-apps/plugin-dialog');
+                          const selected = await open({
+                            directory: true,
+                            multiple: false,
+                            title: 'Select folder for uploaded files',
+                            defaultPath: keepUploadSettings.folder_path,
+                          });
+                          if (selected && typeof selected === 'string') {
+                            const result = await setKeepUploadSettings(keepUploadSettings.enabled, selected);
+                            if (result) setKeepUploadSettingsState(result);
+                          }
+                        } catch (e) {
+                          console.error('Failed to select folder:', e);
+                        }
+                      }}
+                      disabled={!keepUploadSettings.enabled}
+                      className={`p-1.5 rounded transition-colors ${
+                        keepUploadSettings.enabled
+                          ? 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+                          : 'text-gray-600 cursor-not-allowed'
+                      }`}
+                      title="Select folder"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Save imported flight log files to a local folder for backup.
+                  </p>
+                  {keepUploadSettings.enabled && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      <strong className="text-gray-400">Folder:</strong>
+                      <br />
+                      <code className="text-xs text-gray-400 bg-drone-dark px-1 py-0.5 rounded break-all">
+                        {keepUploadSettings.folder_path}
+                      </code>
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Backup & Restore */}

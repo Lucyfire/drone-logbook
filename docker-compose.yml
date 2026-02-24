@@ -9,9 +9,12 @@ services:
       - drone-data:/data/drone-logbook
       # Uncomment and set your sync folder path to enable automatic log import
       # - /path/to/your/drone/logs/on/host/device:/sync-logs:ro
+      # Uncomment to persist uploaded files to a host folder
+      # - /path/to/uploaded/files:/data/drone-logbook/uploaded
     environment:
       - DATA_DIR=/data/drone-logbook
       - RUST_LOG=info
+      - KEEP_UPLOADED_FILES=true
       # Uncomment to enable automatic sync from mounted folder
       # - SYNC_LOGS_PATH=/sync-logs
       # Uncomment to enable scheduled sync (cron expression, default: every 8 hours)

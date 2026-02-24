@@ -48,6 +48,59 @@ fn compute_file_hash(path: &std::path::Path) -> Result<String, String> {
         .map_err(|e| format!("Failed to compute hash: {}", e))
 }
 
+/// Copy uploaded file to the keep folder with hash-based deduplication (web mode)
+fn copy_uploaded_file_web(src_path: &std::path::PathBuf, dest_folder: &std::path::PathBuf, file_hash: Option<&str>) -> Result<(), String> {
+    // Create the destination folder if it doesn't exist
+    std::fs::create_dir_all(dest_folder)
+        .map_err(|e| format!("Failed to create uploaded files folder: {}", e))?;
+    
+    let file_name = src_path.file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Invalid file name")?;
+    
+    let dest_path = dest_folder.join(file_name);
+    
+    // If file with same name exists, check hash
+    if dest_path.exists() {
+        let existing_hash = compute_file_hash(&dest_path)?;
+        
+        // If hashes match, skip (file already exists)
+        if let Some(hash) = file_hash {
+            if existing_hash == hash {
+                log::info!("File already exists with same hash, skipping: {}", file_name);
+                return Ok(());
+            }
+        }
+        
+        // Hashes don't match - save with hash suffix
+        let stem = src_path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let extension = src_path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        
+        let hash_suffix = file_hash.map(|h| &h[..8]).unwrap_or("unknown");
+        let new_name = if extension.is_empty() {
+            format!("{}_{}", stem, hash_suffix)
+        } else {
+            format!("{}_{}.{}", stem, hash_suffix, extension)
+        };
+        
+        let new_dest_path = dest_folder.join(&new_name);
+        std::fs::copy(src_path, &new_dest_path)
+            .map_err(|e| format!("Failed to copy file: {}", e))?;
+        log::info!("Copied uploaded file (renamed due to hash mismatch): {} -> {}", file_name, new_name);
+    } else {
+        // No existing file, just copy
+        std::fs::copy(src_path, &dest_path)
+            .map_err(|e| format!("Failed to copy file: {}", e))?;
+        log::info!("Copied uploaded file: {}", file_name);
+    }
+    
+    Ok(())
+}
+
 // ============================================================================
 // ROUTE HANDLERS
 // ============================================================================
@@ -85,11 +138,40 @@ async fn import_log(
     let import_start = std::time::Instant::now();
     log::info!("Importing uploaded log file: {}", file_name);
 
+    // Check if we should keep uploaded files (via env var or config) - check early for all code paths
+    let keep_enabled = std::env::var("KEEP_UPLOADED_FILES")
+        .map(|v| v.to_lowercase() == "true" || v == "1")
+        .unwrap_or_else(|_| {
+            // Fallback to config.json
+            let config_path = state.db.data_dir.join("config.json");
+            if config_path.exists() {
+                std::fs::read_to_string(&config_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .and_then(|v| v.get("keep_uploaded_files").and_then(|v| v.as_bool()))
+                    .unwrap_or(false) // Default to false for web mode
+            } else {
+                false
+            }
+        });
+    let upload_folder = state.db.data_dir.join("uploaded");
+
+    // Helper to copy uploaded file if setting is enabled
+    let try_copy_file = |file_hash: Option<&str>| {
+        if keep_enabled {
+            if let Err(e) = copy_uploaded_file_web(&temp_path, &upload_folder, file_hash) {
+                log::warn!("Failed to copy uploaded file: {}", e);
+            }
+        }
+    };
+
     let parser = LogParser::new(&state.db);
 
     let parse_result = match parser.parse_log(&temp_path).await {
         Ok(result) => result,
         Err(crate::parser::ParserError::AlreadyImported(matching_flight)) => {
+            // Still copy the file even though flight is already imported
+            try_copy_file(None);
             // Clean up temp file
             let _ = std::fs::remove_file(&temp_path);
             return Ok(Json(ImportResult {
@@ -112,6 +194,9 @@ async fn import_log(
             }));
         }
     };
+
+    // Copy uploaded file before cleanup if enabled
+    try_copy_file(parse_result.metadata.file_hash.as_deref());
 
     // Clean up temp file
     let _ = std::fs::remove_file(&temp_path);
