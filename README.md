@@ -5,7 +5,7 @@
 <H1 align="center"> OPEN DRONELOG </H1>
 
 <p align="center">
-    <a href="https://github.com/arpanghosh8453/drone-logbook/releases">
+    <a href="https://github.com/arpanghosh8453/open-dronelog/releases">
         <img src="https://img.shields.io/badge/Download-Latest%20Release-1a7f37?style=for-the-badge&logo=github" alt="Download Latest Release" height="48"/>
     </a>
     &nbsp;&nbsp;
@@ -123,7 +123,7 @@ Litchi flight logs can be exported as CSV files from the Litchi app. The parser 
 
 ## Setup and installation (Windows/MacOS)
 
-There is no installation step if you want to use the standalone binary builds, just visit the latest [release page](https://github.com/arpanghosh8453/drone-logbook/releases), and download the appropriate binary for Windows or MacOS and run them.
+There is no installation step if you want to use the standalone binary builds, just visit the latest [release page](https://github.com/arpanghosh8453/open-dronelog/releases), and download the appropriate binary for Windows or MacOS and run them.
 
 > [!WARNING]
 > For macOS, there are [additional steps](#macos-users-damaged-file-error-fix) required before you can use the application. 
@@ -199,8 +199,8 @@ Then press Enter and try opening the app again.
 
 ```bash
 # Clone the repository
-git clone https://github.com/arpanghosh8453/drone-logbook
-cd dji-logbook
+git clone https://github.com/arpanghosh8453/open-dronelog
+cd open-dronelog
 
 # Install frontend dependencies
 npm install
@@ -221,20 +221,20 @@ The app can also be deployed as a self-hosted web application using Docker. This
 Pull the pre-built image from GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/arpanghosh8453/drone-logbook:latest
+docker pull ghcr.io/arpanghosh8453/open-dronelog:latest
 
 docker run -d \
   -p 8080:80 \
   -v drone-data:/data/drone-logbook \
-  --name drone-logbook \
-  ghcr.io/arpanghosh8453/drone-logbook:latest
+  --name open-dronelog \
+  ghcr.io/arpanghosh8453/open-dronelog:latest
 ```
 
 Or use docker-compose (uses the same pre-built image):
 
 ```bash
-git clone https://github.com/arpanghosh8453/drone-logbook
-cd drone-logbook
+git clone https://github.com/arpanghosh8453/open-dronelog
+cd open-dronelog
 docker compose up -d
 ```
 
@@ -245,8 +245,8 @@ Then open http://localhost:8080 in your browser.
 If you want to build the Docker image from source instead of pulling the pre-built one:
 
 ```bash
-git clone https://github.com/arpanghosh8453/drone-logbook
-cd dji-logbook
+git clone https://github.com/arpanghosh8453/open-dronelog
+cd open-dronelog
 docker compose -f docker-compose-build.yml up -d
 ```
 
@@ -382,7 +382,7 @@ For more details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### User Scripts
 
-Looking to extend functionality without waiting for official features? Check out the **[Discussions](https://github.com/arpanghosh8453/drone-logbook/discussions)** channel with the `User-Script` tag, where community members share custom scripts, collaborate with developers, and find useful enhancements for custom workflow.
+Looking to extend functionality without waiting for official features? Check out the **[Discussions](https://github.com/arpanghosh8453/open-dronelog/discussions)** channel with the `User-Script` tag, where community members share custom scripts, collaborate with developers, and find useful enhancements for custom workflow.
 
 
 ## Love this project?
@@ -415,4 +415,4 @@ While some parts of this codebase were written with AI assistance (Claude Opus) 
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=arpanghosh8453/drone-logbook&type=date&legend=top-left)](https://www.star-history.com/#arpanghosh8453/drone-logbook&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=arpanghosh8453/open-dronelog&type=date&legend=top-left)](https://www.star-history.com/#arpanghosh8453/open-dronelog&type=date&legend=top-left)

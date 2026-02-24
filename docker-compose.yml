@@ -1,6 +1,8 @@
 services:
-  drone-logbook:
-    image: ghcr.io/arpanghosh8453/drone-logbook:latest
+  open-dronelog:
+    image: ghcr.io/arpanghosh8453/open-dronelog:latest
+    container_name: open-dronelog
+    hostname: open-dronelog
     ports:
       - "8080:80"
     volumes:

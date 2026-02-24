@@ -888,4 +888,4 @@ xattr -d com.apple.quarantine /path/to/Drone\ Logbook.app
 
 ---
 
-**For more information, visit the [GitHub repository](https://github.com/arpanghosh8453/drone-logbook) or check the README for technical details.**
+**For more information, visit the [GitHub repository](https://github.com/arpanghosh8453/open-dronelog) or check the README for technical details.**

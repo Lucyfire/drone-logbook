@@ -1,6 +1,8 @@
 services:
-  drone-logbook:
+  open-dronelog:
     build: .
+    container_name: open-dronelog
+    hostname: open-dronelog
     ports:
       - "8080:80"
     volumes:

@@ -629,7 +629,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <p className="text-xs text-gray-500 mb-3">
                 For decrypting V13+ flight logs. Get your own key following{' '}
                 <a
-                  href="https://github.com/arpanghosh8453/drone-logbook#how-to-obtain-your-own-dji-developer-api-key"
+                  href="https://github.com/arpanghosh8453/open-dronelog#how-to-obtain-your-own-dji-developer-api-key"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-drone-primary hover:underline"
@@ -788,7 +788,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 )}
                 {updateStatus === 'outdated' && latestVersion && (
                   <a
-                    href="https://github.com/arpanghosh8453/drone-logbook/releases/latest"
+                    href="https://github.com/arpanghosh8453/open-dronelog/releases/latest"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors cursor-pointer no-underline"

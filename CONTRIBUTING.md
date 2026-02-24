@@ -13,14 +13,14 @@ Before implementing a new feature and opening a pull request, please **open an i
 
 ### How to Propose a Feature
 
-1. Check existing [issues](https://github.com/arpanghosh8453/drone-logbook/issues) to see if your idea has already been discussed
+1. Check existing [issues](https://github.com/arpanghosh8453/open-dronelog/issues) to see if your idea has already been discussed
 2. Open a new issue describing the feature you'd like to add
 3. Wait for feedback from the maintainer before starting implementation
 4. Once approved, feel free to submit a pull request
 
 ## Custom User Scripts
 
-Looking to extend Open DroneLog with custom functionality? Check out the **[Discussions](https://github.com/arpanghosh8453/drone-logbook/discussions)** channel with the `User-Script` tag!
+Looking to extend Open DroneLog with custom functionality? Check out the **[Discussions](https://github.com/arpanghosh8453/open-dronelog/discussions)** channel with the `User-Script` tag!
 
 In the User Scripts discussions, you can:
 

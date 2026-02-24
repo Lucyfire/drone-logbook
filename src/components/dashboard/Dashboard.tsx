@@ -347,7 +347,7 @@ export function Dashboard() {
             {flights.length} flight{flights.length !== 1 ? 's' : ''} imported
           </span>
           <a
-            href="https://github.com/arpanghosh8453/drone-logbook"
+            href="https://github.com/arpanghosh8453/open-dronelog"
             target="_blank"
             rel="noopener noreferrer"
             className="text-gray-400 hover:text-white transition-colors"

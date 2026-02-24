@@ -106,7 +106,7 @@ function App() {
                 This is a free, open-source project on
               </span>
               <a
-                href="https://github.com/arpanghosh8453/drone-logbook"
+                href="https://github.com/arpanghosh8453/open-dronelog"
                 target="_blank"
                 rel="noopener noreferrer"
                 className={
